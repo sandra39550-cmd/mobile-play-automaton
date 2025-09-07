@@ -1,13 +1,17 @@
 import { useState } from "react";
 import { BotCard } from "./BotCard";
 import { StatsOverview } from "./StatsOverview";
+import { DeviceConnection } from "./DeviceConnection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Filter, Bot } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Search, Filter, Bot, Smartphone } from "lucide-react";
 import { toast } from "sonner";
+import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 
 export const GameBotDashboard = () => {
+  const { devices, sessions, startBotSession, stopBotSession } = useDeviceAutomation();
   const [games, setGames] = useState([
     {
       id: "1",
@@ -114,71 +118,94 @@ export const GameBotDashboard = () => {
             </h1>
           </div>
           <p className="text-xl text-muted-foreground">
-            Advanced AI automation for mobile gaming
+            Real AI automation for mobile gaming
           </p>
           <div className="flex items-center justify-center gap-2">
             <Badge variant="outline" className="text-neon-green border-neon-green">
-              {activeBotsCount} Active Bots
+              {devices.filter(d => d.status === 'online').length} Online Devices
             </Badge>
             <Badge variant="outline" className="text-neon-blue border-neon-blue">
+              {sessions.filter(s => s.status === 'running').length} Active Sessions
+            </Badge>
+            <Badge variant="outline" className="text-neon-pink border-neon-pink">
               6 Games Supported
             </Badge>
           </div>
         </div>
 
-        {/* Stats Overview */}
-        <StatsOverview />
+        {/* Main Content */}
+        <Tabs defaultValue="bots" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 bg-gaming-card border-gaming-border">
+            <TabsTrigger value="bots" className="flex items-center gap-2">
+              <Bot className="w-4 h-4" />
+              Game Bots
+            </TabsTrigger>
+            <TabsTrigger value="devices" className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4" />
+              Devices
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="bots" className="space-y-6">
+            {/* Stats Overview */}
+            <StatsOverview />
 
-        {/* Controls */}
-        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-          <div className="flex flex-1 gap-4 w-full sm:w-auto">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder="Search games..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-gaming-card border-gaming-border"
-              />
+            {/* Controls */}
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+              <div className="flex flex-1 gap-4 w-full sm:w-auto">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Input
+                    placeholder="Search games..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 bg-gaming-card border-gaming-border"
+                  />
+                </div>
+                <div className="flex gap-2 overflow-x-auto">
+                  {categories.map(category => (
+                    <Button
+                      key={category}
+                      variant={selectedCategory === category ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSelectedCategory(category)}
+                      className="whitespace-nowrap"
+                    >
+                      {category === "all" ? "All" : category}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <Button className="bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Game
+              </Button>
             </div>
-            <div className="flex gap-2 overflow-x-auto">
-              {categories.map(category => (
-                <Button
-                  key={category}
-                  variant={selectedCategory === category ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedCategory(category)}
-                  className="whitespace-nowrap"
-                >
-                  {category === "all" ? "All" : category}
-                </Button>
+
+            {/* Bot Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredGames.map((game) => (
+                <BotCard
+                  key={game.id}
+                  game={game}
+                  onStatusChange={handleStatusChange}
+                />
               ))}
             </div>
-          </div>
-          <Button className="bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Game
-          </Button>
-        </div>
 
-        {/* Bot Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredGames.map((game) => (
-            <BotCard
-              key={game.id}
-              game={game}
-              onStatusChange={handleStatusChange}
-            />
-          ))}
-        </div>
-
-        {filteredGames.length === 0 && (
-          <div className="text-center py-12">
-            <Bot className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-xl font-semibold mb-2">No games found</h3>
-            <p className="text-muted-foreground">Try adjusting your search or filters</p>
-          </div>
-        )}
+            {filteredGames.length === 0 && (
+              <div className="text-center py-12">
+                <Bot className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-xl font-semibold mb-2">No games found</h3>
+                <p className="text-muted-foreground">Try adjusting your search or filters</p>
+              </div>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="devices">
+            <DeviceConnection />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

@@ -14,7 +14,163 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bot_actions: {
+        Row: {
+          action_type: string
+          coordinates: Json | null
+          execution_time_ms: number | null
+          id: string
+          screenshot_after: string | null
+          screenshot_before: string | null
+          session_id: string | null
+          success: boolean | null
+          timestamp: string | null
+        }
+        Insert: {
+          action_type: string
+          coordinates?: Json | null
+          execution_time_ms?: number | null
+          id?: string
+          screenshot_after?: string | null
+          screenshot_before?: string | null
+          session_id?: string | null
+          success?: boolean | null
+          timestamp?: string | null
+        }
+        Update: {
+          action_type?: string
+          coordinates?: Json | null
+          execution_time_ms?: number | null
+          id?: string
+          screenshot_after?: string | null
+          screenshot_before?: string | null
+          session_id?: string | null
+          success?: boolean | null
+          timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_actions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "bot_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_sessions: {
+        Row: {
+          actions_performed: number | null
+          config: Json | null
+          created_at: string | null
+          currency_earned: number | null
+          device_id: string | null
+          error_message: string | null
+          game_name: string
+          id: string
+          level_progress: number | null
+          package_name: string
+          runtime_minutes: number | null
+          status: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          actions_performed?: number | null
+          config?: Json | null
+          created_at?: string | null
+          currency_earned?: number | null
+          device_id?: string | null
+          error_message?: string | null
+          game_name: string
+          id?: string
+          level_progress?: number | null
+          package_name: string
+          runtime_minutes?: number | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          actions_performed?: number | null
+          config?: Json | null
+          created_at?: string | null
+          currency_earned?: number | null
+          device_id?: string | null
+          error_message?: string | null
+          game_name?: string
+          id?: string
+          level_progress?: number | null
+          package_name?: string
+          runtime_minutes?: number | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_sessions_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      devices: {
+        Row: {
+          adb_host: string | null
+          adb_port: number | null
+          android_version: string | null
+          created_at: string | null
+          device_id: string
+          id: string
+          ios_version: string | null
+          last_seen: string | null
+          name: string
+          platform: string
+          screen_height: number | null
+          screen_width: number | null
+          status: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          adb_host?: string | null
+          adb_port?: number | null
+          android_version?: string | null
+          created_at?: string | null
+          device_id: string
+          id?: string
+          ios_version?: string | null
+          last_seen?: string | null
+          name: string
+          platform: string
+          screen_height?: number | null
+          screen_width?: number | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          adb_host?: string | null
+          adb_port?: number | null
+          android_version?: string | null
+          created_at?: string | null
+          device_id?: string
+          id?: string
+          ios_version?: string | null
+          last_seen?: string | null
+          name?: string
+          platform?: string
+          screen_height?: number | null
+          screen_width?: number | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
