@@ -47,6 +47,18 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Gaming colors
+        neon: {
+          purple: "hsl(var(--neon-purple))",
+          blue: "hsl(var(--neon-blue))",
+          green: "hsl(var(--neon-green))",
+          pink: "hsl(var(--neon-pink))",
+        },
+        gaming: {
+          bg: "hsl(var(--gaming-bg))",
+          card: "hsl(var(--gaming-card))",
+          border: "hsl(var(--gaming-border))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -84,6 +96,19 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite alternate",
+        "float": "float 3s ease-in-out infinite",
+        "glow": "glow 2s ease-in-out infinite alternate",
+      },
+      backgroundImage: {
+        'gradient-gaming': 'var(--gradient-gaming)',
+        'gradient-primary': 'var(--gradient-primary)',
+        'gradient-glow': 'var(--gradient-glow)',
+      },
+      boxShadow: {
+        'neon': 'var(--shadow-neon)',
+        'gaming': 'var(--shadow-gaming)',
+        'glow': '0 0 30px hsl(var(--neon-purple) / 0.5)',
       },
     },
   },
