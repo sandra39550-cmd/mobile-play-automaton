@@ -1,14 +1,21 @@
 import { useAuth } from '@/hooks/useAuth'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Bot, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Loader2 } from 'lucide-react'
 
 interface AuthWrapperProps {
   children: React.ReactNode
 }
 
 export const AuthWrapper = ({ children }: AuthWrapperProps) => {
-  const { user, loading, signInAnonymously, isAuthenticated } = useAuth()
+  const { user, loading, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      navigate('/auth')
+    }
+  }, [loading, isAuthenticated, navigate])
 
   if (loading) {
     return (
@@ -22,38 +29,7 @@ export const AuthWrapper = ({ children }: AuthWrapperProps) => {
   }
 
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <Card className="max-w-md w-full p-8 text-center border-gaming-border bg-gaming-card">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            <Bot className="w-12 h-12 text-neon-purple animate-pulse-glow" />
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-neon-purple to-neon-blue bg-clip-text text-transparent">
-              Game Bot
-            </h1>
-          </div>
-          
-          <h2 className="text-xl font-semibold mb-4 text-glow">
-            Welcome to Mobile Game Bot Controller
-          </h2>
-          
-          <p className="text-muted-foreground mb-6">
-            Connect and automate your mobile games with AI-powered bots
-          </p>
-          
-          <Button 
-            onClick={signInAnonymously}
-            className="w-full bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg"
-            size="lg"
-          >
-            Start Gaming
-          </Button>
-          
-          <p className="text-xs text-muted-foreground mt-4">
-            Anonymous sign-in • No personal information required
-          </p>
-        </Card>
-      </div>
-    )
+    return null // Navigation to /auth will happen via useEffect
   }
 
   return <>{children}</>
