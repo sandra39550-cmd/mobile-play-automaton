@@ -8,14 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Search, Filter, Bot, Smartphone, User, LogOut } from "lucide-react";
+import { Plus, Search, Filter, Bot, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
-import { useAuth } from "@/hooks/useAuth";
 
 export const GameBotDashboard = () => {
   const { devices, sessions, startBotSession, stopBotSession } = useDeviceAutomation();
-  const { user, signOut } = useAuth();
   const [currentTab, setCurrentTab] = useState("bots");
   const [games, setGames] = useState([
     {
@@ -116,32 +114,11 @@ export const GameBotDashboard = () => {
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <div className="text-center space-y-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex-1" />
-            <div className="flex items-center gap-3">
-              <Bot className="w-10 h-10 text-neon-purple animate-pulse-glow" />
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-neon-purple to-neon-blue bg-clip-text text-transparent animate-glow">
-                Mobile Game Bot Controller
-              </h1>
-            </div>
-            <div className="flex-1 flex justify-end">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <User className="w-4 h-4" />
-                    <span className="hidden sm:inline">
-                      {user?.email?.split('@')[0] || 'User'}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={signOut} className="gap-2">
-                    <LogOut className="w-4 h-4" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <Bot className="w-10 h-10 text-neon-purple animate-pulse-glow" />
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-neon-purple to-neon-blue bg-clip-text text-transparent animate-glow">
+              Mobile Game Bot Controller
+            </h1>
           </div>
           <p className="text-xl text-muted-foreground">
             Real AI automation for mobile gaming
