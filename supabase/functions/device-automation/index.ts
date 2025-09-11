@@ -30,26 +30,20 @@ serve(async (req) => {
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     )
-
-    const { data: { user } } = await supabaseClient.auth.getUser()
-    if (!user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
 
     const { action, payload } = await req.json()
     console.log(`Device automation action: ${action}`, payload)
 
+    // Use a default user ID since we removed authentication
+    const defaultUserId = 'anonymous-user'
+
     switch (action) {
       case 'connect_device':
-        return await connectDevice(supabaseClient, user.id, payload)
+        return await connectDevice(supabaseClient, defaultUserId, payload)
       case 'start_bot_session':
-        return await startBotSession(supabaseClient, user.id, payload)
+        return await startBotSession(supabaseClient, defaultUserId, payload)
       case 'execute_action':
         return await executeDeviceAction(supabaseClient, payload)
       case 'get_device_screenshot':
