@@ -11,95 +11,24 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Plus, Search, Filter, Bot, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
+import { useGameManagement } from "@/hooks/useGameManagement";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const GameBotDashboard = () => {
-  const { devices, sessions, startBotSession, stopBotSession } = useDeviceAutomation();
+  const { devices, sessions } = useDeviceAutomation();
+  const { games, isLoading, handleGameStatusChange, addGameSession, getAvailableGames, getStats } = useGameManagement();
   const [currentTab, setCurrentTab] = useState("bots");
-  const [games, setGames] = useState([
-    {
-      id: "1",
-      name: "Clash Royale",
-      icon: "⚔️",
-      category: "Strategy",
-      status: "active" as const,
-      progress: 78,
-      level: 15,
-      currency: 45670,
-      hourlyRate: 1250,
-    },
-    {
-      id: "2",
-      name: "Candy Crush",
-      icon: "🍭",
-      category: "Puzzle",
-      status: "paused" as const,
-      progress: 45,
-      level: 342,
-      currency: 28900,
-      hourlyRate: 890,
-    },
-    {
-      id: "3",
-      name: "Pokemon GO",
-      icon: "🎮",
-      category: "Adventure",
-      status: "active" as const,
-      progress: 92,
-      level: 28,
-      currency: 15400,
-      hourlyRate: 650,
-    },
-    {
-      id: "4",
-      name: "Coin Master",
-      icon: "🪙",
-      category: "Casino",
-      status: "stopped" as const,
-      progress: 23,
-      level: 67,
-      currency: 89200,
-      hourlyRate: 2100,
-    },
-    {
-      id: "5",
-      name: "PUBG Mobile",
-      icon: "🔫",
-      category: "Battle Royale",
-      status: "active" as const,
-      progress: 67,
-      level: 45,
-      currency: 12500,
-      hourlyRate: 980,
-    },
-    {
-      id: "6",
-      name: "Subway Surfers",
-      icon: "🚇",
-      category: "Endless Runner",
-      status: "paused" as const,
-      progress: 89,
-      level: 156,
-      currency: 67800,
-      hourlyRate: 1420,
-    },
-  ]);
-
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [showAddGame, setShowAddGame] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState("");
+  const [selectedGame, setSelectedGame] = useState("");
 
   const categories = ["all", "Strategy", "Puzzle", "Adventure", "Casino", "Battle Royale", "Endless Runner"];
-
-  const handleStatusChange = (id: string, status: "active" | "paused" | "stopped") => {
-    setGames(games.map(game => 
-      game.id === id ? { ...game, status } : game
-    ));
-    
-    const game = games.find(g => g.id === id);
-    toast(`${game?.name} bot ${status}`, {
-      description: `Bot status changed to ${status}`,
-      duration: 2000,
-    });
-  };
+  const availableGames = getAvailableGames();
+  const onlineDevices = devices.filter(d => d.status === 'online');
+  const stats = getStats();
 
   const filteredGames = games.filter(game => {
     const matchesSearch = game.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -107,7 +36,17 @@ export const GameBotDashboard = () => {
     return matchesSearch && matchesCategory;
   });
 
-  const activeBotsCount = games.filter(game => game.status === "active").length;
+  const handleAddGame = async () => {
+    if (!selectedDevice || !selectedGame) {
+      toast.error('Please select both device and game');
+      return;
+    }
+    
+    await addGameSession(selectedGame, selectedDevice);
+    setShowAddGame(false);
+    setSelectedDevice("");
+    setSelectedGame("");
+  };
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -125,13 +64,13 @@ export const GameBotDashboard = () => {
           </p>
           <div className="flex items-center justify-center gap-2">
             <Badge variant="outline" className="text-neon-green border-neon-green">
-              {devices.filter(d => d.status === 'online').length} Online Devices
+              {onlineDevices.length} Online Devices
             </Badge>
             <Badge variant="outline" className="text-neon-blue border-neon-blue">
-              {sessions.filter(s => s.status === 'running').length} Active Sessions
+              {stats.activeBots} Active Bots
             </Badge>
             <Badge variant="outline" className="text-neon-pink border-neon-pink">
-              6 Games Supported
+              {games.length} Games Available
             </Badge>
           </div>
         </div>
@@ -157,7 +96,7 @@ export const GameBotDashboard = () => {
           
           <TabsContent value="bots" className="space-y-6">
             {/* Stats Overview */}
-            <StatsOverview />
+            <StatsOverview stats={stats} />
 
             {/* Controls */}
             <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
@@ -185,22 +124,90 @@ export const GameBotDashboard = () => {
                   ))}
                 </div>
               </div>
-              <Button className="bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Game
-              </Button>
+              <Dialog open={showAddGame} onOpenChange={setShowAddGame}>
+                <DialogTrigger asChild>
+                  <Button 
+                    className="bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg"
+                    disabled={onlineDevices.length === 0 || availableGames.length === 0}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Game
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-gaming-card border-gaming-border">
+                  <DialogHeader>
+                    <DialogTitle className="text-glow">Add New Game Bot</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Select Device</label>
+                      <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                        <SelectTrigger className="bg-gaming-card border-gaming-border">
+                          <SelectValue placeholder="Choose an online device" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {onlineDevices.map((device) => (
+                            <SelectItem key={device.id} value={device.id}>
+                              {device.name} ({device.platform})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Select Game</label>
+                      <Select value={selectedGame} onValueChange={setSelectedGame}>
+                        <SelectTrigger className="bg-gaming-card border-gaming-border">
+                          <SelectValue placeholder="Choose a game" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableGames.map((game) => (
+                            <SelectItem key={game.packageName} value={game.name}>
+                              {game.icon} {game.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2 pt-4">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setShowAddGame(false)}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={handleAddGame}
+                        className="flex-1 bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg"
+                        disabled={!selectedDevice || !selectedGame}
+                      >
+                        Add Bot
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {/* Bot Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredGames.map((game) => (
-                <BotCard
-                  key={game.id}
-                  game={game}
-                  onStatusChange={handleStatusChange}
-                />
-              ))}
-            </div>
+            {isLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1,2,3,4,5,6].map((i) => (
+                  <div key={i} className="h-64 bg-gaming-card border-gaming-border rounded-lg animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredGames.map((game) => (
+                  <BotCard
+                    key={game.id}
+                    game={game}
+                    onStatusChange={handleGameStatusChange}
+                  />
+                ))}
+              </div>
+            )}
 
             {filteredGames.length === 0 && (
               <div className="text-center py-12">
