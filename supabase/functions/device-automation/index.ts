@@ -36,8 +36,8 @@ serve(async (req) => {
     const { action, payload } = await req.json()
     console.log(`Device automation action: ${action}`, payload)
 
-    // Use a default user ID since we removed authentication
-    const defaultUserId = 'anonymous-user'
+    // Use NULL for user_id since we removed authentication
+    const defaultUserId = null
 
     switch (action) {
       case 'connect_device':
