@@ -60,8 +60,9 @@ const GAME_TEMPLATES = [
 
 export const useGameManagement = () => {
   const [games, setGames] = useState<GameBot[]>([]);
+  const [deviceGames, setDeviceGames] = useState<{[deviceId: string]: any[]}>({});
   const [isLoading, setIsLoading] = useState(true);
-  const { devices, sessions, startBotSession, stopBotSession } = useDeviceAutomation();
+  const { devices, sessions, startBotSession, stopBotSession, scanDeviceGames } = useDeviceAutomation();
 
   // Load games from bot sessions
   const loadGames = async () => {
@@ -190,12 +191,36 @@ export const useGameManagement = () => {
     }
   };
 
-  // Get available games that can be added
+  // Get available games for a specific device
+  const getAvailableGamesForDevice = (deviceId: string) => {
+    const activeGamePackages = new Set(
+      games.filter(g => g.sessionId).map(g => g.packageName)
+    );
+    const installedGames = deviceGames[deviceId] || [];
+    return installedGames.filter(g => !activeGamePackages.has(g.packageName));
+  };
+
+  // Get available games that can be added (legacy for backwards compatibility)
   const getAvailableGames = () => {
     const activeGamePackages = new Set(
       games.filter(g => g.sessionId).map(g => g.packageName)
     );
     return GAME_TEMPLATES.filter(t => !activeGamePackages.has(t.packageName));
+  };
+
+  // Scan games on a device
+  const scanGamesOnDevice = async (deviceId: string) => {
+    try {
+      const games = await scanDeviceGames(deviceId);
+      setDeviceGames(prev => ({
+        ...prev,
+        [deviceId]: games
+      }));
+      return games;
+    } catch (error) {
+      console.error('Error scanning games on device:', error);
+      throw error;
+    }
   };
 
   // Get statistics
@@ -219,10 +244,13 @@ export const useGameManagement = () => {
 
   return {
     games,
+    deviceGames,
     isLoading,
     handleGameStatusChange,
     addGameSession,
     getAvailableGames,
+    getAvailableGamesForDevice,
+    scanGamesOnDevice,
     getStats,
     refreshGames: loadGames,
   };

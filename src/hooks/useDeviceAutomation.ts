@@ -237,6 +237,24 @@ export const useDeviceAutomation = () => {
     }
   }
 
+  const scanDeviceGames = async (deviceId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('device-automation', {
+        body: { 
+          action: 'scan_device_games',
+          payload: { deviceId }
+        }
+      })
+
+      if (error) throw error
+      return data.games
+    } catch (error) {
+      console.error('Error scanning device games:', error)
+      toast.error('Failed to scan device games')
+      throw error
+    }
+  }
+
   return {
     devices,
     sessions,
@@ -246,6 +264,7 @@ export const useDeviceAutomation = () => {
     stopBotSession,
     executeAction,
     getDeviceScreenshot,
+    scanDeviceGames,
     loadDevices,
     loadSessions
   }

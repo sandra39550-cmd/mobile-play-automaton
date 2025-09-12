@@ -50,6 +50,8 @@ serve(async (req) => {
         return await getDeviceScreenshot(supabaseClient, payload.deviceId)
       case 'stop_bot_session':
         return await stopBotSession(supabaseClient, payload.sessionId)
+      case 'scan_device_games':
+        return await scanDeviceGames(supabaseClient, payload.deviceId)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -246,6 +248,53 @@ async function simulateScreenshot(deviceId: string): Promise<string> {
   
   // Return a small placeholder image as base64
   return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+}
+
+async function scanDeviceGames(supabaseClient: any, deviceId: string) {
+  console.log('Scanning games on device:', deviceId)
+  
+  // Verify device is online
+  const { data: device, error: deviceError } = await supabaseClient
+    .from('devices')
+    .select('*')
+    .eq('id', deviceId)
+    .single()
+
+  if (deviceError || !device) {
+    throw new Error('Device not found or offline')
+  }
+
+  // Simulate scanning installed games on the device
+  const installedGames = await simulateGameScan(device)
+  
+  return new Response(JSON.stringify({ 
+    success: true, 
+    games: installedGames
+  }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  })
+}
+
+async function simulateGameScan(device: any): Promise<any[]> {
+  console.log('Simulating game scan for device:', device.name)
+  
+  // Simulate scanning time
+  await new Promise(resolve => setTimeout(resolve, 2000))
+  
+  // Simulate finding popular games on the device
+  const popularGames = [
+    { name: "Clash Royale", icon: "⚔️", category: "Strategy", packageName: "com.supercell.clashroyale" },
+    { name: "Candy Crush", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" },
+    { name: "Pokemon GO", icon: "🎮", category: "Adventure", packageName: "com.nianticlabs.pokemongo" },
+    { name: "Coin Master", icon: "🪙", category: "Casino", packageName: "com.moonactive.coinmaster" },
+    { name: "PUBG Mobile", icon: "🔫", category: "Battle Royale", packageName: "com.tencent.ig" },
+    { name: "Subway Surfers", icon: "🚇", category: "Endless Runner", packageName: "com.kiloo.subwaysurf" },
+  ]
+  
+  // Randomly return 3-6 games as if they're installed
+  const numGames = Math.floor(Math.random() * 4) + 3
+  const shuffled = popularGames.sort(() => 0.5 - Math.random())
+  return shuffled.slice(0, numGames)
 }
 
 async function startGameAutomation(session: any, device: any) {
