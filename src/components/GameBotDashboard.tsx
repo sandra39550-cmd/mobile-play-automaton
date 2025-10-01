@@ -30,20 +30,8 @@ export const GameBotDashboard = () => {
   const stats = getStats();
   const availableGamesForDevice = selectedDevice ? getAvailableGamesForDevice(selectedDevice) : [];
   
-  // Only show games that are either running on devices or available on selected online devices
-  const deviceSpecificGames = games.filter(game => {
-    // Show running games regardless of device status
-    if (game.status !== 'stopped' && game.sessionId) {
-      return true;
-    }
-    // For stopped games, only show if they're available on an online device
-    return onlineDevices.some(device => {
-      const deviceGamesList = deviceGames[device.id] || [];
-      return deviceGamesList.some(dg => dg.packageName === game.packageName);
-    });
-  });
-
-  const filteredGames = deviceSpecificGames.filter(game => {
+  // Filter games based on search and category
+  const filteredGames = games.filter(game => {
     const matchesSearch = game.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === "all" || game.category === selectedCategory;
     return matchesSearch && matchesCategory;
@@ -97,7 +85,7 @@ export const GameBotDashboard = () => {
               {stats.activeBots} Active Bots
             </Badge>
             <Badge variant="outline" className="text-neon-pink border-neon-pink">
-              {deviceSpecificGames.length} Games Available
+              {games.length} Games Available
             </Badge>
           </div>
         </div>

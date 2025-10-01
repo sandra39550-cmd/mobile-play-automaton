@@ -64,12 +64,11 @@ export const useGameManagement = () => {
   const [isLoading, setIsLoading] = useState(true);
   const { devices, sessions, startBotSession, stopBotSession, scanDeviceGames } = useDeviceAutomation();
 
-  // Load games from bot sessions
+  // Load games from bot sessions and device scans
   const loadGames = async () => {
     try {
       setIsLoading(true);
       
-      // Create games from active sessions and templates
       const gameMap = new Map<string, GameBot>();
 
       // Add games from active sessions
@@ -94,22 +93,24 @@ export const useGameManagement = () => {
         }
       });
 
-      // Add remaining templates as available games
-      GAME_TEMPLATES.forEach((template) => {
-        if (!gameMap.has(template.packageName)) {
-          gameMap.set(template.packageName, {
-            id: template.packageName,
-            name: template.name,
-            icon: template.icon,
-            category: template.category,
-            packageName: template.packageName,
-            status: 'stopped',
-            progress: 0,
-            level: 1,
-            currency: 0,
-            hourlyRate: 0,
-          });
-        }
+      // Add games from scanned devices (only for stopped games not already in sessions)
+      Object.values(deviceGames).forEach(deviceGameList => {
+        deviceGameList.forEach(deviceGame => {
+          if (!gameMap.has(deviceGame.packageName)) {
+            gameMap.set(deviceGame.packageName, {
+              id: deviceGame.packageName,
+              name: deviceGame.name,
+              icon: deviceGame.icon,
+              category: deviceGame.category,
+              packageName: deviceGame.packageName,
+              status: 'stopped',
+              progress: 0,
+              level: 1,
+              currency: 0,
+              hourlyRate: 0,
+            });
+          }
+        });
       });
 
       setGames(Array.from(gameMap.values()));
@@ -240,7 +241,7 @@ export const useGameManagement = () => {
 
   useEffect(() => {
     loadGames();
-  }, [sessions.length, devices.length]);
+  }, [sessions.length, devices.length, deviceGames]);
 
   return {
     games,
