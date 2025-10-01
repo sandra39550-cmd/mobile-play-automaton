@@ -18,68 +18,34 @@ export interface GameBot {
   packageName: string;
 }
 
-// Predefined game templates
-const GAME_TEMPLATES = [
-  {
-    name: "Clash Royale",
-    icon: "⚔️",
-    category: "Strategy",
-    packageName: "com.supercell.clashroyale",
-  },
-  {
-    name: "Candy Crush",
-    icon: "🍭",
-    category: "Puzzle", 
-    packageName: "com.king.candycrushsaga",
-  },
-  {
-    name: "Pokemon GO",
-    icon: "🎮",
-    category: "Adventure",
-    packageName: "com.nianticlabs.pokemongo",
-  },
-  {
-    name: "Coin Master",
-    icon: "🪙", 
-    category: "Casino",
-    packageName: "com.moonactive.coinmaster",
-  },
-  {
-    name: "PUBG Mobile",
-    icon: "🔫",
-    category: "Battle Royale",
-    packageName: "com.tencent.ig",
-  },
-  {
-    name: "Subway Surfers",
-    icon: "🚇",
-    category: "Endless Runner", 
-    packageName: "com.kiloo.subwaysurf",
-  },
-];
-
 export const useGameManagement = () => {
   const [games, setGames] = useState<GameBot[]>([]);
   const [deviceGames, setDeviceGames] = useState<{[deviceId: string]: any[]}>({});
   const [isLoading, setIsLoading] = useState(true);
   const { devices, sessions, startBotSession, stopBotSession, scanDeviceGames } = useDeviceAutomation();
 
-  // Load games from bot sessions and device scans
+  // Load games from bot sessions and device scans only
   const loadGames = async () => {
     try {
       setIsLoading(true);
       
       const gameMap = new Map<string, GameBot>();
 
-      // Add games from active sessions
+      // Add games from active sessions - get info from deviceGames
       sessions.forEach((session) => {
-        const template = GAME_TEMPLATES.find(t => t.packageName === session.package_name);
-        if (template) {
+        // Find game info from any device's scanned games
+        let gameInfo = null;
+        for (const deviceGameList of Object.values(deviceGames)) {
+          gameInfo = deviceGameList.find(g => g.packageName === session.package_name);
+          if (gameInfo) break;
+        }
+        
+        if (gameInfo) {
           gameMap.set(session.package_name, {
             id: session.id,
-            name: template.name,
-            icon: template.icon,
-            category: template.category,
+            name: gameInfo.name,
+            icon: gameInfo.icon,
+            category: gameInfo.category,
             packageName: session.package_name,
             status: session.status === 'running' ? 'active' : 
                    session.status === 'paused' ? 'paused' : 'stopped',
@@ -171,16 +137,19 @@ export const useGameManagement = () => {
   // Add a new game session
   const addGameSession = async (gameName: string, deviceId: string) => {
     try {
-      const template = GAME_TEMPLATES.find(t => t.name === gameName);
-      if (!template) {
-        toast.error('Game template not found');
+      // Find game info from device's scanned games
+      const deviceGameList = deviceGames[deviceId] || [];
+      const gameInfo = deviceGameList.find(g => g.name === gameName);
+      
+      if (!gameInfo) {
+        toast.error('Game not found on device');
         return;
       }
 
       await startBotSession({
         deviceId: deviceId,
-        gameName: template.name,
-        packageName: template.packageName,
+        gameName: gameInfo.name,
+        packageName: gameInfo.packageName,
         config: {},
       });
 
@@ -201,12 +170,23 @@ export const useGameManagement = () => {
     return installedGames.filter(g => !activeGamePackages.has(g.packageName));
   };
 
-  // Get available games that can be added (legacy for backwards compatibility)
+  // Get available games that can be added (returns all scanned games not active)
   const getAvailableGames = () => {
     const activeGamePackages = new Set(
       games.filter(g => g.sessionId).map(g => g.packageName)
     );
-    return GAME_TEMPLATES.filter(t => !activeGamePackages.has(t.packageName));
+    
+    // Get all unique games from all devices
+    const allGames = new Map();
+    Object.values(deviceGames).forEach(deviceGameList => {
+      deviceGameList.forEach(game => {
+        if (!activeGamePackages.has(game.packageName)) {
+          allGames.set(game.packageName, game);
+        }
+      });
+    });
+    
+    return Array.from(allGames.values());
   };
 
   // Scan games on a device
