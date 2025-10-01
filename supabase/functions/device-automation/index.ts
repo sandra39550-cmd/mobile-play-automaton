@@ -281,22 +281,10 @@ async function simulateGameScan(device: any): Promise<any[]> {
   // Simulate scanning time
   await new Promise(resolve => setTimeout(resolve, 2000))
   
-  // Always include Candy Crush since user has it installed
-  const candyCrush = { name: "Candy Crush", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" }
-  
-  // Other popular games that might be on the device
-  const otherGames = [
-    { name: "Clash Royale", icon: "⚔️", category: "Strategy", packageName: "com.supercell.clashroyale" },
-    { name: "Pokemon GO", icon: "🎮", category: "Adventure", packageName: "com.nianticlabs.pokemongo" },
-    { name: "Coin Master", icon: "🪙", category: "Casino", packageName: "com.moonactive.coinmaster" },
-    { name: "PUBG Mobile", icon: "🔫", category: "Battle Royale", packageName: "com.tencent.ig" },
-    { name: "Subway Surfers", icon: "🚇", category: "Endless Runner", packageName: "com.kiloo.subwaysurf" },
+  // Return only Candy Crush - the actual game installed on the device
+  return [
+    { name: "Candy Crush", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" }
   ]
-  
-  // Randomly return 2-4 additional games plus Candy Crush
-  const numGames = Math.floor(Math.random() * 3) + 2
-  const shuffled = otherGames.sort(() => 0.5 - Math.random())
-  return [candyCrush, ...shuffled.slice(0, numGames)]
 }
 
 async function startGameAutomation(session: any, device: any) {
