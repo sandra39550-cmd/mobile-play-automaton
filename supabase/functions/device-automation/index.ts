@@ -209,45 +209,104 @@ async function stopBotSession(supabaseClient: any, sessionId: string) {
   })
 }
 
-// Simulation functions for device automation
+// Real ADB device connection functions
 async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
-  // In real implementation, this would use ADB for Android or libimobiledevice for iOS
-  console.log('Simulating device connection for:', deviceInfo.deviceId)
-  
-  // Simulate network call to device
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  
-  // Return true if connection successful
-  return Math.random() > 0.2 // 80% success rate
+  try {
+    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    if (!adbServerUrl) {
+      console.warn('ADB_SERVER_URL not configured, using simulation mode')
+      return Math.random() > 0.2
+    }
+
+    console.log('Connecting to real device:', deviceInfo.deviceId)
+    
+    // Connect to device via ADB over WiFi
+    const connectUrl = `${adbServerUrl}/connect`
+    const response = await fetch(connectUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        host: deviceInfo.adbHost || 'localhost',
+        port: deviceInfo.adbPort || 5555,
+        deviceId: deviceInfo.deviceId
+      })
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to connect to device:', await response.text())
+      return false
+    }
+    
+    const result = await response.json()
+    console.log('Device connection result:', result)
+    return result.success || false
+  } catch (error) {
+    console.error('Error connecting to device:', error)
+    return false
+  }
 }
 
 async function simulateDeviceAction(action: DeviceAction): Promise<{ success: boolean; result?: any }> {
-  console.log('Simulating device action:', action.type)
-  
-  // Simulate action execution time
-  await new Promise(resolve => setTimeout(resolve, 500))
-  
-  switch (action.type) {
-    case 'tap':
-      return { success: true, result: `Tapped at ${action.coordinates?.x}, ${action.coordinates?.y}` }
-    case 'swipe':
-      return { success: true, result: `Swiped ${action.swipeDirection}` }
-    case 'screenshot':
-      return { success: true, result: 'Screenshot taken' }
-    case 'open_app':
-      return { success: true, result: `Opened app ${action.packageName}` }
-    default:
-      return { success: false, result: 'Unknown action' }
+  try {
+    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    if (!adbServerUrl) {
+      console.warn('ADB_SERVER_URL not configured, using simulation mode')
+      await new Promise(resolve => setTimeout(resolve, 500))
+      return { success: true, result: `Simulated ${action.type}` }
+    }
+
+    console.log('Executing real device action:', action.type)
+    
+    const actionUrl = `${adbServerUrl}/action`
+    const response = await fetch(actionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(action)
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to execute action:', await response.text())
+      return { success: false, result: 'Action failed' }
+    }
+    
+    const result = await response.json()
+    console.log('Action result:', result)
+    return result
+  } catch (error) {
+    console.error('Error executing device action:', error)
+    return { success: false, result: error.message }
   }
 }
 
 async function simulateScreenshot(deviceId: string): Promise<string> {
-  // In real implementation, this would capture the actual device screen
-  // For now, return a placeholder base64 image
-  await new Promise(resolve => setTimeout(resolve, 2000))
-  
-  // Return a small placeholder image as base64
-  return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+  try {
+    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    if (!adbServerUrl) {
+      console.warn('ADB_SERVER_URL not configured, using placeholder')
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    }
+
+    console.log('Taking real screenshot from device:', deviceId)
+    
+    const screenshotUrl = `${adbServerUrl}/screenshot`
+    const response = await fetch(screenshotUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId })
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to take screenshot:', await response.text())
+      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    }
+    
+    const result = await response.json()
+    return result.screenshot || "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+  } catch (error) {
+    console.error('Error taking screenshot:', error)
+    return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+  }
 }
 
 async function scanDeviceGames(supabaseClient: any, deviceId: string) {
@@ -276,15 +335,47 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
 }
 
 async function simulateGameScan(device: any): Promise<any[]> {
-  console.log('Simulating game scan for device:', device.name)
-  
-  // Simulate scanning time
-  await new Promise(resolve => setTimeout(resolve, 2000))
-  
-  // Return only Candy Crush - the actual game installed on the device
-  return [
-    { name: "Candy Crush", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" }
-  ]
+  try {
+    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    if (!adbServerUrl) {
+      console.warn('ADB_SERVER_URL not configured, returning mock data')
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      return [
+        { name: "Candy Crush", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" }
+      ]
+    }
+
+    console.log('Scanning real games on device:', device.name)
+    
+    const scanUrl = `${adbServerUrl}/scan-apps`
+    const response = await fetch(scanUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        deviceId: device.device_id,
+        category: 'games'
+      })
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to scan games:', await response.text())
+      return []
+    }
+    
+    const result = await response.json()
+    console.log('Scanned games:', result.apps)
+    
+    // Map game apps to expected format
+    return (result.apps || []).map((app: any) => ({
+      name: app.name || app.packageName,
+      icon: "🎮",
+      category: app.category || "Game",
+      packageName: app.packageName
+    }))
+  } catch (error) {
+    console.error('Error scanning games:', error)
+    return []
+  }
 }
 
 async function startGameAutomation(session: any, device: any) {
