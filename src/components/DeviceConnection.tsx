@@ -5,12 +5,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Smartphone, Wifi, WifiOff, Activity } from 'lucide-react'
+import { Smartphone, Wifi, WifiOff, Activity, Trash2 } from 'lucide-react'
 import { useDeviceAutomation } from '@/hooks/useDeviceAutomation'
 import { toast } from 'sonner'
 
 export const DeviceConnection = () => {
-  const { devices, connectDevice, isLoading } = useDeviceAutomation()
+  const { devices, connectDevice, deleteDevice, isLoading } = useDeviceAutomation()
   const [showConnectionForm, setShowConnectionForm] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
@@ -60,6 +60,12 @@ export const DeviceConnection = () => {
       case 'busy': return 'bg-neon-blue'  
       case 'offline': return 'bg-muted'
       default: return 'bg-muted'
+    }
+  }
+
+  const handleDeleteDevice = async (deviceId: string, deviceName: string) => {
+    if (confirm(`Are you sure you want to remove "${deviceName}"?`)) {
+      await deleteDevice(deviceId)
     }
   }
 
@@ -189,12 +195,22 @@ export const DeviceConnection = () => {
                 <Smartphone className="w-5 h-5 text-neon-purple" />
                 <h3 className="font-semibold text-glow">{device.name}</h3>
               </div>
-              <Badge className={`${getStatusColor(device.status)} text-gaming-bg border-0`}>
-                <div className="flex items-center gap-1">
-                  {getStatusIcon(device.status)}
-                  {device.status}
-                </div>
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge className={`${getStatusColor(device.status)} text-gaming-bg border-0`}>
+                  <div className="flex items-center gap-1">
+                    {getStatusIcon(device.status)}
+                    {device.status}
+                  </div>
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleDeleteDevice(device.id, device.name)}
+                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
             
             <div className="space-y-2 text-sm text-muted-foreground">

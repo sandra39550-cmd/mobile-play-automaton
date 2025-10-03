@@ -255,6 +255,28 @@ export const useDeviceAutomation = () => {
     }
   }
 
+  const deleteDevice = async (deviceId: string) => {
+    setIsLoading(true)
+    try {
+      const { error } = await supabase
+        .from('devices')
+        .delete()
+        .eq('id', deviceId)
+
+      if (error) throw error
+
+      toast.success('Device removed successfully')
+      await loadDevices()
+      return true
+    } catch (error) {
+      console.error('Error deleting device:', error)
+      toast.error('Failed to remove device')
+      return false
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return {
     devices,
     sessions,
@@ -265,6 +287,7 @@ export const useDeviceAutomation = () => {
     executeAction,
     getDeviceScreenshot,
     scanDeviceGames,
+    deleteDevice,
     loadDevices,
     loadSessions
   }
