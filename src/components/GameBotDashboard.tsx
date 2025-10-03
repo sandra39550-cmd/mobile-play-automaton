@@ -27,6 +27,7 @@ export const GameBotDashboard = () => {
 
   const categories = ["all", "Strategy", "Puzzle", "Adventure", "Casino", "Battle Royale", "Endless Runner"];
   const onlineDevices = devices.filter(d => d.status === 'online');
+  const availableDevices = devices; // Show all devices, not just online ones
   const stats = getStats();
   const availableGamesForDevice = selectedDevice ? getAvailableGamesForDevice(selectedDevice) : [];
   
@@ -143,7 +144,7 @@ export const GameBotDashboard = () => {
                 <DialogTrigger asChild>
                   <Button 
                     className="bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg"
-                    disabled={onlineDevices.length === 0}
+                    disabled={availableDevices.length === 0}
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Add Game
@@ -155,27 +156,27 @@ export const GameBotDashboard = () => {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm font-medium text-muted-foreground">Select Device</label>
+                      <label className="text-sm font-medium text-muted-foreground mb-2 block">Select Device</label>
                       <Select value={selectedDevice} onValueChange={handleDeviceSelect}>
                         <SelectTrigger className="bg-gaming-card border-gaming-border">
-                          <SelectValue placeholder="Choose an online device" />
+                          <SelectValue placeholder="Choose a device" />
                         </SelectTrigger>
-                        <SelectContent>
-                          {onlineDevices.map((device) => (
+                        <SelectContent className="bg-gaming-card border-gaming-border z-50">
+                          {availableDevices.map((device) => (
                             <SelectItem key={device.id} value={device.id}>
-                              {device.name} ({device.platform})
+                              {device.name} - {device.platform} ({device.status})
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-muted-foreground">Select Game</label>
+                      <label className="text-sm font-medium text-muted-foreground mb-2 block">Select Game from {availableDevices.find(d => d.id === selectedDevice)?.name || 'Device'}</label>
                       <Select value={selectedGame} onValueChange={setSelectedGame} disabled={!selectedDevice}>
                         <SelectTrigger className="bg-gaming-card border-gaming-border">
                           <SelectValue placeholder={selectedDevice ? "Choose a game from device" : "Select device first"} />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="bg-gaming-card border-gaming-border z-50">
                           {availableGamesForDevice.map((game) => (
                             <SelectItem key={game.packageName} value={game.name}>
                               {game.icon} {game.name}
