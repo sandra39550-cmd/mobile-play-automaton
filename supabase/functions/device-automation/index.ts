@@ -220,8 +220,9 @@ async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
 
     console.log('Connecting to real device:', deviceInfo.deviceId)
     
-    // Connect to device via ADB over WiFi
-    const connectUrl = `${adbServerUrl}/connect`
+    // Ensure URL has protocol
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    const connectUrl = `${baseUrl}/connect`
     const response = await fetch(connectUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -257,7 +258,9 @@ async function simulateDeviceAction(action: DeviceAction): Promise<{ success: bo
 
     console.log('Executing real device action:', action.type)
     
-    const actionUrl = `${adbServerUrl}/action`
+    // Ensure URL has protocol
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    const actionUrl = `${baseUrl}/action`
     const response = await fetch(actionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -289,7 +292,9 @@ async function simulateScreenshot(deviceId: string): Promise<string> {
 
     console.log('Taking real screenshot from device:', deviceId)
     
-    const screenshotUrl = `${adbServerUrl}/screenshot`
+    // Ensure URL has protocol
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    const screenshotUrl = `${baseUrl}/screenshot`
     const response = await fetch(screenshotUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -347,7 +352,9 @@ async function simulateGameScan(device: any): Promise<any[]> {
 
     console.log('Scanning real games on device:', device.name)
     
-    const scanUrl = `${adbServerUrl}/scan-apps`
+    // Ensure URL has protocol
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    const scanUrl = `${baseUrl}/scan-apps`
     const response = await fetch(scanUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
