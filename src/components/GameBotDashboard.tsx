@@ -42,12 +42,17 @@ export const GameBotDashboard = () => {
     setSelectedDevice(deviceId);
     setSelectedGame("");
     
-    // Scan for games on the selected device
-    if (deviceId && !deviceGames[deviceId]) {
+    const device = availableDevices.find(d => d.id === deviceId);
+    
+    // Always scan for games on the selected device
+    if (deviceId) {
+      toast.loading(`Scanning ${device?.name} for games...`, { id: 'scan-games' });
       try {
-        await scanGamesOnDevice(deviceId);
+        const scannedGames = await scanGamesOnDevice(deviceId);
+        toast.success(`Found ${scannedGames.length} games on ${device?.name}`, { id: 'scan-games' });
       } catch (error) {
         console.error('Failed to scan games on device:', error);
+        toast.error(`Failed to scan ${device?.name}`, { id: 'scan-games' });
       }
     }
   };
@@ -176,10 +181,16 @@ export const GameBotDashboard = () => {
                         <SelectTrigger className="bg-gaming-card border-gaming-border">
                           <SelectValue placeholder="Choose a device" />
                         </SelectTrigger>
-                        <SelectContent className="bg-gaming-card border-gaming-border z-50">
+                        <SelectContent className="bg-gaming-card border-gaming-border z-[100]">
                           {availableDevices.map((device) => (
-                            <SelectItem key={device.id} value={device.id}>
-                              {device.name} - {device.platform} ({device.status})
+                            <SelectItem key={device.id} value={device.id} className="cursor-pointer hover:bg-gaming-hover">
+                              <div className="flex items-center gap-2">
+                                <Smartphone className="w-4 h-4" />
+                                <span className="font-medium">{device.name}</span>
+                                <Badge variant="outline" className={device.status === 'online' ? 'text-neon-green border-neon-green' : 'text-muted-foreground'}>
+                                  {device.platform}
+                                </Badge>
+                              </div>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -196,17 +207,31 @@ export const GameBotDashboard = () => {
                         <SelectTrigger className="bg-gaming-card border-gaming-border">
                           <SelectValue placeholder={selectedDevice ? "Choose a game from device" : "Select device first"} />
                         </SelectTrigger>
-                        <SelectContent className="bg-gaming-card border-gaming-border z-50">
-                          {availableGamesForDevice.map((game) => (
-                            <SelectItem key={game.packageName} value={game.name}>
-                              {game.icon} {game.name}
+                        <SelectContent className="bg-gaming-card border-gaming-border z-[100]">
+                          {availableGamesForDevice.length > 0 ? (
+                            availableGamesForDevice.map((game) => (
+                              <SelectItem key={game.packageName} value={game.name} className="cursor-pointer hover:bg-gaming-hover">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xl">{game.icon}</span>
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{game.name}</span>
+                                    <span className="text-xs text-muted-foreground">{game.packageName}</span>
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="no-games" disabled>
+                              {deviceGames[selectedDevice] ? 'No compatible games found' : 'Scanning for games...'}
                             </SelectItem>
-                          ))}
+                          )}
                         </SelectContent>
                       </Select>
-                      {selectedDevice && availableGamesForDevice.length === 0 && (
+                      {selectedDevice && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          {deviceGames[selectedDevice] ? 'No compatible games found on device' : 'Scanning device for games...'}
+                          {deviceGames[selectedDevice] 
+                            ? `${availableGamesForDevice.length} games available` 
+                            : 'Scanning device for installed games...'}
                         </p>
                       )}
                     </div>
