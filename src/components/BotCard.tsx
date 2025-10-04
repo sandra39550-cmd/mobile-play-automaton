@@ -16,6 +16,8 @@ interface BotCardProps {
     level: number;
     currency: number;
     hourlyRate: number;
+    deviceId?: string;
+    packageName?: string;
   };
   onStatusChange: (id: string, status: "active" | "paused" | "stopped") => void;
 }
@@ -55,6 +57,9 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
             <div>
               <h3 className="font-bold text-lg text-glow">{game.name}</h3>
               <p className="text-sm text-muted-foreground">{game.category}</p>
+              {game.packageName && (
+                <p className="text-xs text-muted-foreground/60 font-mono">{game.packageName}</p>
+              )}
             </div>
           </div>
           <Badge 
@@ -94,10 +99,10 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
                 variant="default"
                 size="sm"
                 onClick={() => onStatusChange(game.id, "active")}
-                className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg border-0"
+                className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg border-0 font-bold"
               >
                 <Play className="w-4 h-4 mr-1" />
-                Start
+                Play Now
               </Button>
             )}
             
