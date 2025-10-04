@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Search, Filter, Bot, Smartphone } from "lucide-react";
+import { Plus, Search, Filter, Bot, Smartphone, Play } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
@@ -58,10 +58,25 @@ export const GameBotDashboard = () => {
       return;
     }
     
-    await addGameSession(selectedGame, selectedDevice);
-    setShowAddGame(false);
-    setSelectedDevice("");
-    setSelectedGame("");
+    const device = availableDevices.find(d => d.id === selectedDevice);
+    const gameInfo = availableGamesForDevice.find(g => g.name === selectedGame);
+    
+    if (!gameInfo) {
+      toast.error('Game not found');
+      return;
+    }
+    
+    toast.loading(`Starting ${gameInfo.name} on ${device?.name}...`, { id: 'start-game' });
+    
+    try {
+      await addGameSession(selectedGame, selectedDevice);
+      toast.success(`${gameInfo.name} is now playing on ${device?.name}!`, { id: 'start-game' });
+      setShowAddGame(false);
+      setSelectedDevice("");
+      setSelectedGame("");
+    } catch (error) {
+      toast.error(`Failed to start game: ${error}`, { id: 'start-game' });
+    }
   };
 
   return (
@@ -143,16 +158,16 @@ export const GameBotDashboard = () => {
               <Dialog open={showAddGame} onOpenChange={setShowAddGame}>
                 <DialogTrigger asChild>
                   <Button 
-                    className="bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg"
+                    className="bg-neon-green hover:bg-neon-green/80 text-gaming-bg font-bold"
                     disabled={availableDevices.length === 0}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Add Game
+                    Select & Play Game
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="bg-gaming-card border-gaming-border">
                   <DialogHeader>
-                    <DialogTitle className="text-glow">Add New Game Bot</DialogTitle>
+                    <DialogTitle className="text-glow">Select Game from Device & Play</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
@@ -171,7 +186,12 @@ export const GameBotDashboard = () => {
                       </Select>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-muted-foreground mb-2 block">Select Game from {availableDevices.find(d => d.id === selectedDevice)?.name || 'Device'}</label>
+                      <label className="text-sm font-medium text-muted-foreground mb-2 block">
+                        Select Game from {availableDevices.find(d => d.id === selectedDevice)?.name || 'Device'}
+                        {selectedDevice && deviceGames[selectedDevice] && (
+                          <span className="ml-2 text-neon-green">({availableGamesForDevice.length} games found)</span>
+                        )}
+                      </label>
                       <Select value={selectedGame} onValueChange={setSelectedGame} disabled={!selectedDevice}>
                         <SelectTrigger className="bg-gaming-card border-gaming-border">
                           <SelectValue placeholder={selectedDevice ? "Choose a game from device" : "Select device first"} />
@@ -200,10 +220,11 @@ export const GameBotDashboard = () => {
                       </Button>
                       <Button 
                         onClick={handleAddGame}
-                        className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg font-bold"
+                        className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg font-bold text-lg"
                         disabled={!selectedDevice || !selectedGame}
                       >
-                        Play Game
+                        <Play className="w-5 h-5 mr-2" />
+                        Play Game Now
                       </Button>
                     </div>
                   </div>
