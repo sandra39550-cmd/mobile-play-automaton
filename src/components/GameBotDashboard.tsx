@@ -200,10 +200,10 @@ export const GameBotDashboard = () => {
                       </Button>
                       <Button 
                         onClick={handleAddGame}
-                        className="flex-1 bg-neon-purple hover:bg-neon-purple/80 text-gaming-bg"
+                        className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg font-bold"
                         disabled={!selectedDevice || !selectedGame}
                       >
-                        Add Bot
+                        Play Game
                       </Button>
                     </div>
                   </div>
