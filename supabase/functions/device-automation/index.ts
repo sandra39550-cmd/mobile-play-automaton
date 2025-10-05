@@ -73,24 +73,59 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   // Simulate device connection via ADB for Android or iOS tools
   const deviceStatus = await simulateDeviceConnection(deviceInfo)
   
-  const { data, error } = await supabaseClient
+  // Check if device already exists
+  const { data: existingDevice } = await supabaseClient
     .from('devices')
-    .upsert({
-      user_id: userId,
-      name: deviceInfo.name,
-      device_id: deviceInfo.deviceId,
-      platform: deviceInfo.platform,
-      status: deviceStatus ? 'online' : 'offline',
-      adb_host: deviceInfo.adbHost,
-      adb_port: deviceInfo.adbPort,
-      screen_width: deviceInfo.screenWidth,
-      screen_height: deviceInfo.screenHeight,
-      android_version: deviceInfo.androidVersion,
-      ios_version: deviceInfo.iosVersion,
-      last_seen: new Date().toISOString()
-    })
-    .select()
+    .select('id')
+    .eq('device_id', deviceInfo.deviceId)
     .single()
+
+  let data, error
+  
+  if (existingDevice) {
+    // Update existing device
+    const result = await supabaseClient
+      .from('devices')
+      .update({
+        name: deviceInfo.name,
+        status: deviceStatus ? 'online' : 'offline',
+        adb_host: deviceInfo.adbHost,
+        adb_port: deviceInfo.adbPort,
+        screen_width: deviceInfo.screenWidth,
+        screen_height: deviceInfo.screenHeight,
+        last_seen: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('device_id', deviceInfo.deviceId)
+      .select()
+      .single()
+    
+    data = result.data
+    error = result.error
+  } else {
+    // Insert new device
+    const result = await supabaseClient
+      .from('devices')
+      .insert({
+        user_id: userId,
+        name: deviceInfo.name,
+        device_id: deviceInfo.deviceId,
+        platform: deviceInfo.platform,
+        status: deviceStatus ? 'online' : 'offline',
+        adb_host: deviceInfo.adbHost,
+        adb_port: deviceInfo.adbPort,
+        screen_width: deviceInfo.screenWidth,
+        screen_height: deviceInfo.screenHeight,
+        android_version: deviceInfo.androidVersion,
+        ios_version: deviceInfo.iosVersion,
+        last_seen: new Date().toISOString()
+      })
+      .select()
+      .single()
+    
+    data = result.data
+    error = result.error
+  }
 
   if (error) throw error
 
