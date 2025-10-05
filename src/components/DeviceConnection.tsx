@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Smartphone, Wifi, WifiOff, Activity, Trash2 } from 'lucide-react'
+import { Smartphone, Wifi, WifiOff, Activity, Trash2, RefreshCw } from 'lucide-react'
 import { useDeviceAutomation } from '@/hooks/useDeviceAutomation'
 import { toast } from 'sonner'
 
@@ -67,6 +67,19 @@ export const DeviceConnection = () => {
     if (confirm(`Are you sure you want to remove "${deviceName}"?`)) {
       await deleteDevice(deviceId)
     }
+  }
+
+  const handleRefreshStatus = async (device: any) => {
+    toast.info('Refreshing device status...')
+    await connectDevice({
+      name: device.name,
+      deviceId: device.device_id,
+      platform: device.platform,
+      adbHost: device.adb_host || 'localhost',
+      adbPort: device.adb_port || 5555,
+      screenWidth: device.screen_width || 1080,
+      screenHeight: device.screen_height || 1920
+    })
   }
 
   return (
@@ -202,6 +215,15 @@ export const DeviceConnection = () => {
                     {device.status}
                   </div>
                 </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleRefreshStatus(device)}
+                  className="h-8 w-8 hover:bg-neon-green/10"
+                  title="Refresh status"
+                >
+                  <RefreshCw className="w-4 h-4 text-neon-green" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
