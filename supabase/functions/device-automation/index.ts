@@ -141,16 +141,20 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
 async function startBotSession(supabaseClient: any, userId: string, sessionData: any) {
   console.log('Starting bot session:', sessionData)
   
-  // Verify device is online
+  // Verify device exists and is online (no user_id check since auth is disabled)
   const { data: device, error: deviceError } = await supabaseClient
     .from('devices')
     .select('*')
     .eq('id', sessionData.deviceId)
-    .eq('user_id', userId)
     .single()
 
   if (deviceError || !device) {
+    console.error('Device lookup error:', deviceError)
     throw new Error('Device not found or offline')
+  }
+
+  if (device.status !== 'online') {
+    throw new Error(`Device ${device.name} is ${device.status}`)
   }
 
   // Create bot session
@@ -445,18 +449,54 @@ async function simulateGameScan(device: any): Promise<any[]> {
 async function startGameAutomation(session: any, device: any) {
   console.log('Starting game automation for:', session.game_name)
   
-  // This would contain the actual AI logic for playing the game
-  // For now, we'll just simulate some actions
-  const actions = [
-    { type: 'open_app', packageName: session.package_name },
-    { type: 'screenshot' },
-    { type: 'tap', coordinates: { x: 500, y: 800 } },
-    { type: 'swipe', swipeDirection: 'up' }
-  ]
-  
-  // Execute actions with delays
-  for (const action of actions) {
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    console.log('Executing automated action:', action.type)
+  try {
+    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    
+    // Define automation actions for the game
+    const actions = [
+      { type: 'open_app', packageName: session.package_name },
+      { type: 'screenshot' },
+      { type: 'tap', coordinates: { x: device.screen_width / 2, y: device.screen_height / 2 } },
+      { type: 'swipe', swipeDirection: 'up', duration: 300 }
+    ]
+    
+    // Execute actions on the real device
+    for (const action of actions) {
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      console.log('Executing automated action:', action.type)
+      
+      if (adbServerUrl) {
+        const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+        const actionUrl = `${baseUrl}/action`
+        
+        try {
+          const actionPayload = {
+            deviceId: device.device_id,
+            ...action
+          }
+          
+          const response = await fetch(actionUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(actionPayload)
+          })
+          
+          if (response.ok) {
+            const result = await response.json()
+            console.log(`Action ${action.type} executed:`, result)
+          } else {
+            console.error(`Failed to execute ${action.type}:`, await response.text())
+          }
+        } catch (error) {
+          console.error(`Error executing ${action.type}:`, error)
+        }
+      } else {
+        console.log(`Simulated action: ${action.type}`)
+      }
+    }
+    
+    console.log('Game automation sequence completed for:', session.game_name)
+  } catch (error) {
+    console.error('Error in game automation:', error)
   }
 }
