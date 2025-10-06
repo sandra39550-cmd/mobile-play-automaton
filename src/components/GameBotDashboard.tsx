@@ -24,6 +24,7 @@ export const GameBotDashboard = () => {
   const [showAddGame, setShowAddGame] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState("");
   const [selectedGame, setSelectedGame] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
 
   const categories = ["all", "Strategy", "Puzzle", "Adventure", "Casino", "Battle Royale", "Endless Runner"];
   const onlineDevices = devices.filter(d => d.status === 'online');
@@ -46,6 +47,7 @@ export const GameBotDashboard = () => {
     
     // Always scan for games on the selected device
     if (deviceId) {
+      setIsScanning(true);
       toast.loading(`Scanning ${device?.name} for games...`, { id: 'scan-games' });
       try {
         const scannedGames = await scanGamesOnDevice(deviceId);
@@ -53,6 +55,8 @@ export const GameBotDashboard = () => {
       } catch (error) {
         console.error('Failed to scan games on device:', error);
         toast.error(`Failed to scan ${device?.name}`, { id: 'scan-games' });
+      } finally {
+        setIsScanning(false);
       }
     }
   };
@@ -199,15 +203,20 @@ export const GameBotDashboard = () => {
                     <div>
                       <label className="text-sm font-medium mb-2 block">
                         Step 2: Select Game from Device
-                        {selectedDevice && deviceGames[selectedDevice] && (
+                        {selectedDevice && deviceGames[selectedDevice] && !isScanning && (
                           <Badge variant="outline" className="ml-2 text-neon-green border-neon-green">
                             {availableGamesForDevice.length} games available
                           </Badge>
                         )}
+                        {isScanning && (
+                          <Badge variant="outline" className="ml-2 text-neon-blue border-neon-blue animate-pulse">
+                            Scanning device...
+                          </Badge>
+                        )}
                       </label>
-                      <Select value={selectedGame} onValueChange={setSelectedGame} disabled={!selectedDevice}>
+                      <Select value={selectedGame} onValueChange={setSelectedGame} disabled={!selectedDevice || isScanning}>
                         <SelectTrigger className="bg-gaming-card border-gaming-border h-12">
-                          <SelectValue placeholder={selectedDevice ? "Choose a game (e.g. Candy Crush)" : "Select device first"} />
+                          <SelectValue placeholder={isScanning ? "Scanning device..." : selectedDevice ? "Choose a game (e.g. Candy Crush)" : "Select device first"} />
                         </SelectTrigger>
                         <SelectContent className="bg-gaming-card border-gaming-border z-[100]">
                           {availableGamesForDevice.length > 0 ? (
@@ -224,18 +233,20 @@ export const GameBotDashboard = () => {
                             ))
                           ) : (
                             <SelectItem value="no-games" disabled>
-                              {deviceGames[selectedDevice] ? 'No compatible games found - check ADB connection' : 'Scanning device...'}
+                              {isScanning ? 'Scanning device...' : deviceGames[selectedDevice] ? 'No compatible games found - check ADB connection' : 'Scanning device...'}
                             </SelectItem>
                           )}
                         </SelectContent>
                       </Select>
                       {selectedDevice && (
                         <p className="text-xs text-muted-foreground mt-2">
-                          {deviceGames[selectedDevice] 
-                            ? availableGamesForDevice.length > 0 
-                              ? `Found ${availableGamesForDevice.length} games installed on ${availableDevices.find(d => d.id === selectedDevice)?.name}` 
-                              : 'No games found on this device'
-                            : 'Scanning for games...'}
+                          {isScanning 
+                            ? '🔍 Scanning device for installed games...'
+                            : deviceGames[selectedDevice] 
+                              ? availableGamesForDevice.length > 0 
+                                ? `Found ${availableGamesForDevice.length} games installed on ${availableDevices.find(d => d.id === selectedDevice)?.name}` 
+                                : 'No games found on this device'
+                              : 'Scanning for games...'}
                         </p>
                       )}
                     </div>
