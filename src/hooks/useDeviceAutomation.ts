@@ -60,9 +60,15 @@ export const useDeviceAutomation = () => {
         () => loadSessions())
       .subscribe()
 
+    // Auto-check device status every 10 seconds
+    const statusInterval = setInterval(() => {
+      checkAllDeviceStatus()
+    }, 10000)
+
     return () => {
       supabase.removeChannel(devicesChannel)
       supabase.removeChannel(sessionsChannel)
+      clearInterval(statusInterval)
     }
   }, [])
 
@@ -277,6 +283,31 @@ export const useDeviceAutomation = () => {
     }
   }
 
+  const checkDeviceStatus = async (deviceId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('device-automation', {
+        body: {
+          action: 'check_device_status',
+          payload: { deviceId }
+        }
+      })
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error checking device status:', error)
+      return null
+    }
+  }
+
+  const checkAllDeviceStatus = async () => {
+    if (devices.length === 0) return
+    
+    for (const device of devices) {
+      await checkDeviceStatus(device.id)
+    }
+  }
+
   return {
     devices,
     sessions,
@@ -288,6 +319,8 @@ export const useDeviceAutomation = () => {
     getDeviceScreenshot,
     scanDeviceGames,
     deleteDevice,
+    checkDeviceStatus,
+    checkAllDeviceStatus,
     loadDevices,
     loadSessions
   }

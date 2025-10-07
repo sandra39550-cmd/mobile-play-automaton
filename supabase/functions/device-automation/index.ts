@@ -52,6 +52,8 @@ serve(async (req) => {
         return await stopBotSession(supabaseClient, payload.sessionId)
       case 'scan_device_games':
         return await scanDeviceGames(supabaseClient, payload.deviceId)
+      case 'check_device_status':
+        return await checkDeviceStatus(supabaseClient, payload.deviceId)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -248,6 +250,97 @@ async function stopBotSession(supabaseClient: any, sessionId: string) {
   })
 }
 
+// Check device status via ADB
+async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
+  console.log('Checking device status via ADB:', deviceId)
+  
+  try {
+    // Get device from database
+    const { data: device, error: deviceError } = await supabaseClient
+      .from('devices')
+      .select('*')
+      .eq('id', deviceId)
+      .single()
+
+    if (deviceError || !device) {
+      throw new Error('Device not found')
+    }
+
+    // Check if device is actually connected via ADB
+    const isConnected = await checkADBConnection(device.device_id)
+    
+    // Update device status in database
+    const newStatus = isConnected ? 'online' : 'offline'
+    await supabaseClient
+      .from('devices')
+      .update({ 
+        status: newStatus,
+        last_seen: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', deviceId)
+
+    console.log(`Device ${device.device_id} status updated to: ${newStatus}`)
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      status: newStatus,
+      deviceId: device.device_id
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('Error checking device status:', error)
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+// Check if device is connected via ADB
+async function checkADBConnection(deviceId: string): Promise<boolean> {
+  try {
+    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    if (!adbServerUrl) {
+      console.warn('ADB_SERVER_URL not configured, cannot check device status')
+      return false
+    }
+
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    const statusUrl = `${baseUrl}/devices`
+    
+    console.log('Checking ADB devices at:', statusUrl)
+    
+    const response = await fetch(statusUrl, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!response.ok) {
+      console.error('Failed to get ADB devices:', await response.text())
+      return false
+    }
+    
+    const result = await response.json()
+    const connectedDevices = result.devices || []
+    
+    // Check if our device is in the list of connected devices
+    const isConnected = connectedDevices.some((d: any) => 
+      d.id === deviceId || d.serial === deviceId
+    )
+    
+    console.log(`Device ${deviceId} is ${isConnected ? 'connected' : 'disconnected'}`)
+    return isConnected
+  } catch (error) {
+    console.error('Error checking ADB connection:', error)
+    return false
+  }
+}
+
 // Real ADB device connection functions
 async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
   try {
@@ -277,22 +370,23 @@ async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
       
       if (!response.ok) {
         console.error('Failed to connect to ADB server:', await response.text())
-        // Even if ADB server fails, treat USB connected devices as online
-        return true
+        // Check actual device status instead of assuming online
+        return await checkADBConnection(deviceInfo.deviceId)
       }
       
       const result = await response.json()
       console.log('Device connection result:', result)
-      return true // Device is connected
+      
+      // Verify device is actually connected
+      return await checkADBConnection(deviceInfo.deviceId)
     } catch (fetchError) {
       console.error('Error connecting to ADB server:', fetchError)
-      // If ADB server is unreachable, assume USB tethered device is online
-      return true
+      // Check actual device status
+      return await checkADBConnection(deviceInfo.deviceId)
     }
   } catch (error) {
     console.error('Error in device connection:', error)
-    // Default to online for USB tethered devices
-    return true
+    return false
   }
 }
 
