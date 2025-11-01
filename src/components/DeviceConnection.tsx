@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Smartphone, Wifi, WifiOff, Activity, Trash2, RefreshCw } from 'lucide-react'
+import { Smartphone, Wifi, WifiOff, Activity, Trash2, RefreshCw, Usb, Radio } from 'lucide-react'
 import { useDeviceAutomation } from '@/hooks/useDeviceAutomation'
 import { toast } from 'sonner'
 
@@ -45,9 +45,16 @@ export const DeviceConnection = () => {
     }
   }
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string, connectionType?: string) => {
+    if (status === 'online') {
+      if (connectionType === 'usb') {
+        return <Usb className="w-4 h-4 text-neon-green" />
+      } else if (connectionType === 'wireless') {
+        return <Radio className="w-4 h-4 text-neon-green" />
+      }
+      return <Wifi className="w-4 h-4 text-neon-green" />
+    }
     switch (status) {
-      case 'online': return <Wifi className="w-4 h-4 text-neon-green" />
       case 'busy': return <Activity className="w-4 h-4 text-neon-blue" />
       case 'offline': return <WifiOff className="w-4 h-4 text-muted-foreground" />
       default: return <WifiOff className="w-4 h-4 text-muted-foreground" />
@@ -61,6 +68,15 @@ export const DeviceConnection = () => {
       case 'offline': return 'bg-muted'
       default: return 'bg-muted'
     }
+  }
+
+  const getStatusText = (status: string, connectionType?: string) => {
+    if (status === 'online') {
+      if (connectionType === 'usb') return 'USB Tethered'
+      if (connectionType === 'wireless') return 'Wireless'
+      return 'Online'
+    }
+    return status.charAt(0).toUpperCase() + status.slice(1)
   }
 
   const handleDeleteDevice = async (deviceId: string, deviceName: string) => {
@@ -211,8 +227,8 @@ export const DeviceConnection = () => {
               <div className="flex items-center gap-2">
                 <Badge className={`${getStatusColor(device.status)} text-gaming-bg border-0`}>
                   <div className="flex items-center gap-1">
-                    {getStatusIcon(device.status)}
-                    {device.status}
+                    {getStatusIcon(device.status, device.connection_type)}
+                    {getStatusText(device.status, device.connection_type)}
                   </div>
                 </Badge>
                 <Button
