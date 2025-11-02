@@ -15,7 +15,6 @@ interface Device {
   adb_port?: number
   android_version?: string
   ios_version?: string
-  connection_type?: string
   created_at: string
   updated_at: string
   user_id: string

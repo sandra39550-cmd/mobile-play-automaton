@@ -122,7 +122,6 @@ export type Database = {
           adb_host: string | null
           adb_port: number | null
           android_version: string | null
-          connection_type: string | null
           created_at: string | null
           device_id: string
           id: string
@@ -140,7 +139,6 @@ export type Database = {
           adb_host?: string | null
           adb_port?: number | null
           android_version?: string | null
-          connection_type?: string | null
           created_at?: string | null
           device_id: string
           id?: string
@@ -158,7 +156,6 @@ export type Database = {
           adb_host?: string | null
           adb_port?: number | null
           android_version?: string | null
-          connection_type?: string | null
           created_at?: string | null
           device_id?: string
           id?: string
