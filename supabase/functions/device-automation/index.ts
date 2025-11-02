@@ -334,7 +334,7 @@ async function checkADBConnection(deviceId: string): Promise<boolean> {
     // Check if our device is in the list of connected devices (USB or wireless)
     const isConnected = connectedDevices.some((d: any) => {
       const matchesSerial = d.id === deviceId || d.serial === deviceId
-      const isDevice = d.state === 'device' // Only count devices that are ready
+      const isDevice = d.status === 'device' // Only count devices that are ready
       return matchesSerial && isDevice
     })
     
