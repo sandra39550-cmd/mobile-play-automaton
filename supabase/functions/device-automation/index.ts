@@ -329,12 +329,14 @@ async function checkADBConnection(deviceId: string): Promise<boolean> {
     const result = await response.json()
     const connectedDevices = result.devices || []
     
-    console.log('Connected devices via ADB:', connectedDevices)
+    console.log('Connected devices via ADB:', JSON.stringify(connectedDevices))
+    console.log(`Looking for device: ${deviceId}`)
     
     // Check if our device is in the list of connected devices (USB or wireless)
     const isConnected = connectedDevices.some((d: any) => {
       const matchesSerial = d.id === deviceId || d.serial === deviceId
       const isDevice = d.status === 'device' // Only count devices that are ready
+      console.log(`Comparing: ${d.id} === ${deviceId}, status: ${d.status}, match: ${matchesSerial && isDevice}`)
       return matchesSerial && isDevice
     })
     
