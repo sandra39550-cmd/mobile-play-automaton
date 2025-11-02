@@ -335,12 +335,13 @@ async function checkADBConnection(deviceId: string): Promise<boolean> {
     // Check if our device is in the list of connected devices (USB or wireless)
     const isConnected = connectedDevices.some((d: any) => {
       const matchesSerial = d.id === deviceId || d.serial === deviceId
-      const isDevice = d.status === 'device' // Only count devices that are ready
-      console.log(`Comparing: ${d.id} === ${deviceId}, status: ${d.status}, match: ${matchesSerial && isDevice}`)
+      // Handle both 'status' and 'type' field names, check for 'device' value
+      const isDevice = d.status === 'device' || d.type === 'device'
+      console.log(`Comparing: ${d.id} === ${deviceId}, status/type: ${d.status || d.type}, match: ${matchesSerial && isDevice}`)
       return matchesSerial && isDevice
     })
     
-    console.log(`Device ${deviceId} USB/wireless status: ${isConnected ? 'ONLINE' : 'OFFLINE'}`)
+    console.log(`Device ${deviceId} final status: ${isConnected ? 'ONLINE' : 'OFFLINE'}`)
     return isConnected
   } catch (error) {
     console.error('Error checking USB tethered device:', error.message)
