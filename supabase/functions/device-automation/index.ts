@@ -72,24 +72,51 @@ serve(async (req) => {
 async function connectDevice(supabaseClient: any, userId: string, deviceInfo: any) {
   console.log('Connecting device:', deviceInfo)
   
-  // Simulate device connection via ADB for Android or iOS tools
-  const deviceStatus = await simulateDeviceConnection(deviceInfo)
+  // Get real device ID from ADB
+  let realDeviceId = deviceInfo.deviceId
+  const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
   
-  // Check if device already exists
+  if (adbServerUrl) {
+    try {
+      const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+      const devicesResponse = await fetch(`${baseUrl}/devices`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000)
+      })
+      
+      if (devicesResponse.ok) {
+        const devicesResult = await devicesResponse.json()
+        const connectedDevices = devicesResult.devices || []
+        
+        if (connectedDevices.length > 0) {
+          realDeviceId = connectedDevices[0].id
+          console.log(`Using real ADB device ID: ${realDeviceId}`)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching real device ID:', error)
+    }
+  }
+  
+  // Check device status
+  const deviceStatus = await checkADBConnection(realDeviceId)
+  
+  // Check if device already exists (check by name to allow ID updates)
   const { data: existingDevice } = await supabaseClient
     .from('devices')
     .select('id')
-    .eq('device_id', deviceInfo.deviceId)
-    .single()
+    .eq('name', deviceInfo.name)
+    .maybeSingle()
 
   let data, error
   
   if (existingDevice) {
-    // Update existing device
+    // Update existing device with real device ID
     const result = await supabaseClient
       .from('devices')
       .update({
-        name: deviceInfo.name,
+        device_id: realDeviceId,
         status: deviceStatus ? 'online' : 'offline',
         adb_host: deviceInfo.adbHost,
         adb_port: deviceInfo.adbPort,
@@ -98,20 +125,20 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
         last_seen: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('device_id', deviceInfo.deviceId)
+      .eq('id', existingDevice.id)
       .select()
       .single()
     
     data = result.data
     error = result.error
   } else {
-    // Insert new device
+    // Insert new device with real device ID
     const result = await supabaseClient
       .from('devices')
       .insert({
         user_id: userId,
         name: deviceInfo.name,
-        device_id: deviceInfo.deviceId,
+        device_id: realDeviceId,
         platform: deviceInfo.platform,
         status: deviceStatus ? 'online' : 'offline',
         adb_host: deviceInfo.adbHost,
@@ -355,43 +382,40 @@ async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
     const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
     if (!adbServerUrl) {
       console.warn('ADB_SERVER_URL not configured, treating device as online')
-      // If no ADB server, assume USB tethered devices are online
       return true
     }
 
     console.log('Connecting to real device:', deviceInfo.deviceId)
     
-    // Ensure URL has protocol
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
-    const connectUrl = `${baseUrl}/connect`
     
+    // First, get list of connected devices to find the real device ID
     try {
-      const response = await fetch(connectUrl, {
-        method: 'POST',
+      const devicesResponse = await fetch(`${baseUrl}/devices`, {
+        method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          host: deviceInfo.adbHost || 'localhost',
-          port: deviceInfo.adbPort || 5555,
-          deviceId: deviceInfo.deviceId
-        })
+        signal: AbortSignal.timeout(5000)
       })
       
-      if (!response.ok) {
-        console.error('Failed to connect to ADB server:', await response.text())
-        // Check actual device status instead of assuming online
-        return await checkADBConnection(deviceInfo.deviceId)
+      if (devicesResponse.ok) {
+        const devicesResult = await devicesResponse.json()
+        const connectedDevices = devicesResult.devices || []
+        console.log('Found connected devices:', JSON.stringify(connectedDevices))
+        
+        // If there are connected devices, use the first one's ID
+        if (connectedDevices.length > 0) {
+          const realDeviceId = connectedDevices[0].id
+          console.log(`Using real device ID from ADB: ${realDeviceId}`)
+          // Check connection using the real device ID
+          return await checkADBConnection(realDeviceId)
+        }
       }
-      
-      const result = await response.json()
-      console.log('Device connection result:', result)
-      
-      // Verify device is actually connected
-      return await checkADBConnection(deviceInfo.deviceId)
-    } catch (fetchError) {
-      console.error('Error connecting to ADB server:', fetchError)
-      // Check actual device status
-      return await checkADBConnection(deviceInfo.deviceId)
+    } catch (error) {
+      console.error('Error getting device list:', error)
     }
+    
+    // Fallback: check with provided device ID
+    return await checkADBConnection(deviceInfo.deviceId)
   } catch (error) {
     console.error('Error in device connection:', error)
     return false
