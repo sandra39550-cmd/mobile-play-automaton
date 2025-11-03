@@ -45,16 +45,28 @@ export const GameBotDashboard = () => {
     
     const device = availableDevices.find(d => d.id === deviceId);
     
+    if (!device) return;
+    
+    // Check if device is online before scanning
+    if (device.status !== 'online') {
+      toast.error(`${device.name} is ${device.status}. Please connect the device first.`);
+      return;
+    }
+    
     // Always scan for games on the selected device
     if (deviceId) {
       setIsScanning(true);
-      toast.loading(`Scanning ${device?.name} for games...`, { id: 'scan-games' });
+      toast.loading(`🔍 Scanning ${device.name} via ADB for installed games...`, { id: 'scan-games' });
       try {
         const scannedGames = await scanGamesOnDevice(deviceId);
-        toast.success(`Found ${scannedGames.length} games on ${device?.name}`, { id: 'scan-games' });
+        if (scannedGames.length > 0) {
+          toast.success(`✅ Found ${scannedGames.length} game(s) on ${device.name} (e.g., ${scannedGames[0].name})`, { id: 'scan-games' });
+        } else {
+          toast.warning(`No games found on ${device.name}. Make sure games are installed and device is connected via ADB.`, { id: 'scan-games' });
+        }
       } catch (error) {
         console.error('Failed to scan games on device:', error);
-        toast.error(`Failed to scan ${device?.name}`, { id: 'scan-games' });
+        toast.error(`❌ Failed to scan ${device.name}. Check ADB connection.`, { id: 'scan-games' });
       } finally {
         setIsScanning(false);
       }
@@ -205,18 +217,18 @@ export const GameBotDashboard = () => {
                         Step 2: Select Game from Device
                         {selectedDevice && deviceGames[selectedDevice] && !isScanning && (
                           <Badge variant="outline" className="ml-2 text-neon-green border-neon-green">
-                            {availableGamesForDevice.length} games available
+                            {availableGamesForDevice.length} games from {availableDevices.find(d => d.id === selectedDevice)?.name}
                           </Badge>
                         )}
                         {isScanning && (
                           <Badge variant="outline" className="ml-2 text-neon-blue border-neon-blue animate-pulse">
-                            Scanning device...
+                            Scanning via ADB...
                           </Badge>
                         )}
                       </label>
                       <Select value={selectedGame} onValueChange={setSelectedGame} disabled={!selectedDevice || isScanning}>
                         <SelectTrigger className="bg-gaming-card border-gaming-border h-12">
-                          <SelectValue placeholder={isScanning ? "Scanning device..." : selectedDevice ? "Choose a game (e.g. Candy Crush)" : "Select device first"} />
+                          <SelectValue placeholder={isScanning ? "Scanning device via ADB..." : selectedDevice ? "Choose a game (e.g. Candy Crush Saga)" : "Select device first"} />
                         </SelectTrigger>
                         <SelectContent className="bg-gaming-card border-gaming-border z-[100]">
                           {availableGamesForDevice.length > 0 ? (
@@ -226,27 +238,27 @@ export const GameBotDashboard = () => {
                                   <span className="text-2xl">{game.icon}</span>
                                   <div className="flex flex-col">
                                     <span className="font-medium text-base">{game.name}</span>
-                                    <span className="text-xs text-muted-foreground">{game.category}</span>
+                                    <span className="text-xs text-muted-foreground">{game.packageName}</span>
                                   </div>
                                 </div>
                               </SelectItem>
                             ))
                           ) : (
                             <SelectItem value="no-games" disabled>
-                              {isScanning ? 'Scanning device...' : deviceGames[selectedDevice] ? 'No compatible games found - check ADB connection' : 'Scanning device...'}
+                              {isScanning ? 'Scanning device via ADB...' : deviceGames[selectedDevice] ? 'No games found - ensure device is connected' : 'Select device to scan'}
                             </SelectItem>
                           )}
                         </SelectContent>
                       </Select>
                       {selectedDevice && (
-                        <p className="text-xs text-muted-foreground mt-2">
+                        <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                           {isScanning 
-                            ? '🔍 Scanning device for installed games...'
+                            ? '🔍 Scanning real device via ADB for installed games...'
                             : deviceGames[selectedDevice] 
                               ? availableGamesForDevice.length > 0 
-                                ? `Found ${availableGamesForDevice.length} games installed on ${availableDevices.find(d => d.id === selectedDevice)?.name}` 
-                                : 'No games found on this device'
-                              : 'Scanning for games...'}
+                                ? `📱 Showing ${availableGamesForDevice.length} game(s) installed on ${availableDevices.find(d => d.id === selectedDevice)?.name} (scanned from actual device)` 
+                                : '⚠️ No games found - make sure device is connected and has games installed'
+                              : 'Waiting for scan results...'}
                         </p>
                       )}
                     </div>
