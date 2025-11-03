@@ -12,7 +12,7 @@ import { Plus, Search, Filter, Bot, Smartphone, Play } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const GameBotDashboard = () => {
@@ -40,7 +40,10 @@ export const GameBotDashboard = () => {
   });
 
   const handleDeviceSelect = async (deviceId: string) => {
-    console.log('Device selected:', deviceId);
+    console.log('🔥 DEVICE SELECT TRIGGERED! DeviceId:', deviceId);
+    console.log('Current selectedDevice before:', selectedDevice);
+    console.log('Available devices:', availableDevices);
+    
     setSelectedDevice(deviceId);
     setSelectedGame("");
     
@@ -48,29 +51,34 @@ export const GameBotDashboard = () => {
     console.log('Found device:', device);
     
     if (!device) {
-      console.error('Device not found in available devices');
+      console.error('⚠️ Device not found in available devices');
+      toast.error('Device not found');
       return;
     }
     
     // Always scan for games, even if device shows offline (it might be a timing issue)
-    console.log('Starting device scan for:', device.name, 'status:', device.status);
+    console.log('✅ Starting device scan for:', device.name, 'status:', device.status);
     setIsScanning(true);
     toast.loading(`🔍 Scanning ${device.name} for installed games...`, { id: 'scan-games' });
     
     try {
-      console.log('Calling scanGamesOnDevice...');
+      console.log('📡 Calling scanGamesOnDevice with deviceId:', deviceId);
       const scannedGames = await scanGamesOnDevice(deviceId);
-      console.log('Scan complete. Found games:', scannedGames);
+      console.log('✅ Scan complete. Found games:', scannedGames);
       
       if (scannedGames && scannedGames.length > 0) {
-        toast.success(`✅ Found ${scannedGames.length} game(s): ${scannedGames.map(g => g.name).join(', ')}`, { id: 'scan-games' });
+        const gameNames = scannedGames.map(g => g.name).join(', ');
+        console.log('Game names:', gameNames);
+        toast.success(`✅ Found ${scannedGames.length} game(s): ${gameNames}`, { id: 'scan-games' });
       } else {
+        console.warn('⚠️ No games returned from scan');
         toast.warning(`No games found on ${device.name}. Verify ADB connection and installed games.`, { id: 'scan-games' });
       }
     } catch (error) {
-      console.error('Failed to scan games on device:', error);
-      toast.error(`❌ Scan failed: ${error.message || 'Check ADB server and device connection'}`, { id: 'scan-games' });
+      console.error('❌ Failed to scan games on device:', error);
+      toast.error(`❌ Scan failed: ${error?.message || 'Check ADB server and device connection'}`, { id: 'scan-games' });
     } finally {
+      console.log('🏁 Scan process finished, setting isScanning to false');
       setIsScanning(false);
     }
   };
@@ -191,6 +199,9 @@ export const GameBotDashboard = () => {
                 <DialogContent className="bg-gaming-card border-gaming-border">
                   <DialogHeader>
                     <DialogTitle className="text-glow">Choose Device & Play Game</DialogTitle>
+                    <DialogDescription className="text-muted-foreground">
+                      Select your connected device and choose a game to start playing automatically
+                    </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
