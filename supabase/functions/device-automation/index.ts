@@ -490,6 +490,7 @@ async function simulateScreenshot(deviceId: string): Promise<string> {
 }
 
 async function scanDeviceGames(supabaseClient: any, deviceId: string) {
+  console.log('=== SCAN DEVICE GAMES CALLED ===')
   console.log('Scanning games on device:', deviceId)
   
   // Verify device is online
@@ -499,12 +500,20 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
     .eq('id', deviceId)
     .single()
 
+  console.log('Device lookup result:', device, 'Error:', deviceError)
+
   if (deviceError || !device) {
+    console.error('Device not found or error:', deviceError)
     throw new Error('Device not found or offline')
   }
 
+  console.log(`Device found: ${device.name}, status: ${device.status}, device_id: ${device.device_id}`)
+
   // Simulate scanning installed games on the device
   const installedGames = await simulateGameScan(device)
+  
+  console.log('=== SCAN COMPLETE, RETURNING GAMES ===')
+  console.log('Games found:', JSON.stringify(installedGames))
   
   return new Response(JSON.stringify({ 
     success: true, 

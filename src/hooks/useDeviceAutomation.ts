@@ -250,7 +250,9 @@ export const useDeviceAutomation = () => {
   }
 
   const scanDeviceGames = async (deviceId: string) => {
+    console.log('=== FRONTEND: scanDeviceGames called with deviceId:', deviceId)
     try {
+      console.log('Invoking device-automation edge function with scan_device_games action')
       const { data, error } = await supabase.functions.invoke('device-automation', {
         body: { 
           action: 'scan_device_games',
@@ -258,7 +260,14 @@ export const useDeviceAutomation = () => {
         }
       })
 
-      if (error) throw error
+      console.log('Edge function response:', { data, error })
+
+      if (error) {
+        console.error('Edge function error:', error)
+        throw error
+      }
+      
+      console.log('Games returned from edge function:', data.games)
       return data.games
     } catch (error) {
       console.error('Error scanning device games:', error)
