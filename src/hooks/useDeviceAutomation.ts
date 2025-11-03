@@ -123,8 +123,14 @@ export const useDeviceAutomation = () => {
       if (error) throw error
 
       if (data.success) {
-        toast.success(`Device "${deviceInfo.name}" connected successfully`)
+        const statusMessage = data.connected 
+          ? `Device "${deviceInfo.name}" is online` 
+          : `Device "${deviceInfo.name}" connected but appears offline`
+        toast.success(statusMessage)
+        // Force immediate refresh to get updated status
         await loadDevices()
+        // Small delay then refresh again to ensure real-time updates have propagated
+        setTimeout(() => loadDevices(), 1000)
         return data.device
       } else {
         toast.error('Failed to connect device')
