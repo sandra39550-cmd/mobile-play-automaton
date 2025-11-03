@@ -224,6 +224,21 @@ export const GameBotDashboard = () => {
                           ))}
                         </SelectContent>
                       </Select>
+                      {/* DEBUG: Manual scan button */}
+                      {availableDevices.length > 0 && (
+                        <Button
+                          onClick={() => {
+                            console.log('🧪 MANUAL SCAN BUTTON CLICKED');
+                            const firstDevice = availableDevices[0];
+                            console.log('Manually triggering scan for:', firstDevice);
+                            handleDeviceSelect(firstDevice.id);
+                          }}
+                          className="mt-2 w-full bg-neon-blue"
+                          size="sm"
+                        >
+                          🧪 Test: Scan {availableDevices[0]?.name} Now
+                        </Button>
+                      )}
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-2 block">
