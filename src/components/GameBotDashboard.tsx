@@ -40,36 +40,38 @@ export const GameBotDashboard = () => {
   });
 
   const handleDeviceSelect = async (deviceId: string) => {
+    console.log('Device selected:', deviceId);
     setSelectedDevice(deviceId);
     setSelectedGame("");
     
     const device = availableDevices.find(d => d.id === deviceId);
+    console.log('Found device:', device);
     
-    if (!device) return;
-    
-    // Check if device is online before scanning
-    if (device.status !== 'online') {
-      toast.error(`${device.name} is ${device.status}. Please connect the device first.`);
+    if (!device) {
+      console.error('Device not found in available devices');
       return;
     }
     
-    // Always scan for games on the selected device
-    if (deviceId) {
-      setIsScanning(true);
-      toast.loading(`🔍 Scanning ${device.name} via ADB for installed games...`, { id: 'scan-games' });
-      try {
-        const scannedGames = await scanGamesOnDevice(deviceId);
-        if (scannedGames.length > 0) {
-          toast.success(`✅ Found ${scannedGames.length} game(s) on ${device.name} (e.g., ${scannedGames[0].name})`, { id: 'scan-games' });
-        } else {
-          toast.warning(`No games found on ${device.name}. Make sure games are installed and device is connected via ADB.`, { id: 'scan-games' });
-        }
-      } catch (error) {
-        console.error('Failed to scan games on device:', error);
-        toast.error(`❌ Failed to scan ${device.name}. Check ADB connection.`, { id: 'scan-games' });
-      } finally {
-        setIsScanning(false);
+    // Always scan for games, even if device shows offline (it might be a timing issue)
+    console.log('Starting device scan for:', device.name, 'status:', device.status);
+    setIsScanning(true);
+    toast.loading(`🔍 Scanning ${device.name} for installed games...`, { id: 'scan-games' });
+    
+    try {
+      console.log('Calling scanGamesOnDevice...');
+      const scannedGames = await scanGamesOnDevice(deviceId);
+      console.log('Scan complete. Found games:', scannedGames);
+      
+      if (scannedGames && scannedGames.length > 0) {
+        toast.success(`✅ Found ${scannedGames.length} game(s): ${scannedGames.map(g => g.name).join(', ')}`, { id: 'scan-games' });
+      } else {
+        toast.warning(`No games found on ${device.name}. Verify ADB connection and installed games.`, { id: 'scan-games' });
       }
+    } catch (error) {
+      console.error('Failed to scan games on device:', error);
+      toast.error(`❌ Scan failed: ${error.message || 'Check ADB server and device connection'}`, { id: 'scan-games' });
+    } finally {
+      setIsScanning(false);
     }
   };
 
