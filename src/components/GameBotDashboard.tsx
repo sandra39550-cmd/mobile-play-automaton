@@ -40,10 +40,12 @@ export const GameBotDashboard = () => {
   });
 
   const handleDeviceSelect = async (deviceId: string) => {
+    console.log('🎯 handleDeviceSelect called with deviceId:', deviceId);
     setSelectedDevice(deviceId);
     setSelectedGame("");
     
     const device = availableDevices.find(d => d.id === deviceId);
+    console.log('📱 Found device:', device);
     
     if (!device) {
       toast.error('Device not found');
@@ -52,23 +54,30 @@ export const GameBotDashboard = () => {
     
     // Check device status before scanning
     if (device.status === 'offline') {
+      console.log('❌ Device is offline, aborting scan');
       toast.error(`❌ ${device.name} is OFFLINE. Please connect the device via ADB and ensure the ADB server is running.`, { duration: 5000 });
       return;
     }
     
+    console.log('✅ Device is online, starting scan...');
     setIsScanning(true);
     toast.loading(`🔍 Scanning ${device.name} for installed games...`, { id: 'scan-games' });
     
     try {
+      console.log('🔍 Calling scanGamesOnDevice...');
       const scannedGames = await scanGamesOnDevice(deviceId);
+      console.log('📦 Scan result:', scannedGames);
       
       if (scannedGames && scannedGames.length > 0) {
+        console.log(`✅ Found ${scannedGames.length} games:`, scannedGames.map(g => g.name));
         toast.success(`✅ Found ${scannedGames.length} game(s) on ${device.name}`, { id: 'scan-games' });
       } else {
-        toast.warning(`No games found on ${device.name}. Device may have disconnected or has no supported games installed.`, { id: 'scan-games' });
+        console.log('⚠️ No games returned from scan');
+        toast.warning(`⚠️ No games found on ${device.name}. Make sure the ADB server is running at localhost:3000 and games are installed.`, { id: 'scan-games', duration: 6000 });
       }
     } catch (error) {
-      toast.error(`Failed to scan: ${error?.message || 'Check ADB connection'}`, { id: 'scan-games' });
+      console.error('❌ Scan error:', error);
+      toast.error(`Failed to scan: ${error?.message || 'Check ADB connection and server'}`, { id: 'scan-games' });
     } finally {
       setIsScanning(false);
     }

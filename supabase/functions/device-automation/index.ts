@@ -527,7 +527,7 @@ async function simulateGameScan(device: any): Promise<any[]> {
   try {
     const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
     if (!adbServerUrl) {
-      console.warn('ADB_SERVER_URL not configured, returning mock data')
+      console.warn('⚠️ ADB_SERVER_URL not configured, returning mock data')
       await new Promise(resolve => setTimeout(resolve, 2000))
       return [
         { name: "Candy Crush Saga", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" },
@@ -536,23 +536,30 @@ async function simulateGameScan(device: any): Promise<any[]> {
       ]
     }
 
-    console.log('Scanning real games on device:', device.name)
+    console.log(`🔍 Scanning real games on device: ${device.name} (device_id: ${device.device_id})`)
     
     // Ensure URL has protocol
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     const scanUrl = `${baseUrl}/scan-apps`
+    console.log(`📡 Calling ADB server at: ${scanUrl}`)
+    console.log(`📤 Request body:`, JSON.stringify({ deviceId: device.device_id, category: 'games' }))
+    
     const response = await fetch(scanUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         deviceId: device.device_id,
         category: 'games'
-      })
+      }),
+      signal: AbortSignal.timeout(10000) // 10 second timeout
     })
     
+    console.log(`📥 ADB server response status: ${response.status}`)
+    
     if (!response.ok) {
-      console.error('Failed to scan games:', await response.text())
-      console.log('Returning mock games data as fallback')
+      const errorText = await response.text()
+      console.error(`❌ Failed to scan games (${response.status}):`, errorText)
+      console.log('⚠️ Returning mock games data as fallback')
       return [
         { name: "Candy Crush Saga", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" },
         { name: "Clash of Clans", icon: "⚔️", category: "Strategy", packageName: "com.supercell.clashofclans" },
@@ -561,18 +568,29 @@ async function simulateGameScan(device: any): Promise<any[]> {
     }
     
     const result = await response.json()
-    console.log('Scanned games:', result.apps)
+    console.log(`📦 Raw ADB server response:`, JSON.stringify(result))
+    console.log(`🎮 Apps array:`, JSON.stringify(result.apps))
+    console.log(`📊 Number of apps found: ${(result.apps || []).length}`)
+    
+    if (!result.apps || result.apps.length === 0) {
+      console.warn('⚠️ ADB server returned empty apps array!')
+      console.log('Device might not have any games installed or ADB connection issue')
+      return []
+    }
     
     // Map game apps to expected format
-    return (result.apps || []).map((app: any) => ({
+    const mappedGames = (result.apps || []).map((app: any) => ({
       name: app.name || app.packageName,
       icon: "🎮",
       category: app.category || "Game",
       packageName: app.packageName
     }))
+    
+    console.log(`✅ Returning ${mappedGames.length} games:`, JSON.stringify(mappedGames.map(g => g.name)))
+    return mappedGames
   } catch (error) {
-    console.error('Error scanning games:', error)
-    console.log('Returning mock games data as fallback')
+    console.error('❌ Error scanning games:', error)
+    console.log('⚠️ Returning mock games data as fallback')
     return [
       { name: "Candy Crush Saga", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" },
       { name: "Clash of Clans", icon: "⚔️", category: "Strategy", packageName: "com.supercell.clashofclans" },
