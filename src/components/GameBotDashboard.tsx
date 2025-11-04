@@ -40,45 +40,36 @@ export const GameBotDashboard = () => {
   });
 
   const handleDeviceSelect = async (deviceId: string) => {
-    console.log('🔥 DEVICE SELECT TRIGGERED! DeviceId:', deviceId);
-    console.log('Current selectedDevice before:', selectedDevice);
-    console.log('Available devices:', availableDevices);
-    
     setSelectedDevice(deviceId);
     setSelectedGame("");
     
     const device = availableDevices.find(d => d.id === deviceId);
-    console.log('Found device:', device);
     
     if (!device) {
-      console.error('⚠️ Device not found in available devices');
       toast.error('Device not found');
       return;
     }
     
-    // Always scan for games, even if device shows offline (it might be a timing issue)
-    console.log('✅ Starting device scan for:', device.name, 'status:', device.status);
+    // Check device status before scanning
+    if (device.status === 'offline') {
+      toast.error(`❌ ${device.name} is OFFLINE. Please connect the device via ADB and ensure the ADB server is running.`, { duration: 5000 });
+      return;
+    }
+    
     setIsScanning(true);
     toast.loading(`🔍 Scanning ${device.name} for installed games...`, { id: 'scan-games' });
     
     try {
-      console.log('📡 Calling scanGamesOnDevice with deviceId:', deviceId);
       const scannedGames = await scanGamesOnDevice(deviceId);
-      console.log('✅ Scan complete. Found games:', scannedGames);
       
       if (scannedGames && scannedGames.length > 0) {
-        const gameNames = scannedGames.map(g => g.name).join(', ');
-        console.log('Game names:', gameNames);
-        toast.success(`✅ Found ${scannedGames.length} game(s): ${gameNames}`, { id: 'scan-games' });
+        toast.success(`✅ Found ${scannedGames.length} game(s) on ${device.name}`, { id: 'scan-games' });
       } else {
-        console.warn('⚠️ No games returned from scan');
-        toast.warning(`No games found on ${device.name}. Verify ADB connection and installed games.`, { id: 'scan-games' });
+        toast.warning(`No games found on ${device.name}. Device may have disconnected or has no supported games installed.`, { id: 'scan-games' });
       }
     } catch (error) {
-      console.error('❌ Failed to scan games on device:', error);
-      toast.error(`❌ Scan failed: ${error?.message || 'Check ADB server and device connection'}`, { id: 'scan-games' });
+      toast.error(`Failed to scan: ${error?.message || 'Check ADB connection'}`, { id: 'scan-games' });
     } finally {
-      console.log('🏁 Scan process finished, setting isScanning to false');
       setIsScanning(false);
     }
   };
@@ -212,33 +203,32 @@ export const GameBotDashboard = () => {
                         </SelectTrigger>
                         <SelectContent className="bg-gaming-card border-gaming-border z-[100]">
                           {availableDevices.map((device) => (
-                            <SelectItem key={device.id} value={device.id} className="cursor-pointer hover:bg-gaming-hover">
+                            <SelectItem 
+                              key={device.id} 
+                              value={device.id} 
+                              className="cursor-pointer hover:bg-gaming-hover"
+                              disabled={device.status === 'offline'}
+                            >
                               <div className="flex items-center gap-2">
-                                <Smartphone className="w-4 h-4" />
-                                <span className="font-medium">{device.name}</span>
-                                <Badge variant="outline" className={device.status === 'online' ? 'text-neon-green border-neon-green' : 'text-muted-foreground'}>
-                                  {device.status}
+                                <Smartphone className={`w-4 h-4 ${device.status === 'offline' ? 'text-muted-foreground' : ''}`} />
+                                <span className={`font-medium ${device.status === 'offline' ? 'text-muted-foreground line-through' : ''}`}>
+                                  {device.name}
+                                </span>
+                                <Badge 
+                                  variant="outline" 
+                                  className={
+                                    device.status === 'online' 
+                                      ? 'text-neon-green border-neon-green bg-neon-green/10' 
+                                      : 'text-red-500 border-red-500 bg-red-500/10'
+                                  }
+                                >
+                                  {device.status === 'online' ? '🟢 Online' : '🔴 Offline'}
                                 </Badge>
                               </div>
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      {/* DEBUG: Manual scan button */}
-                      {availableDevices.length > 0 && (
-                        <Button
-                          onClick={() => {
-                            console.log('🧪 MANUAL SCAN BUTTON CLICKED');
-                            const firstDevice = availableDevices[0];
-                            console.log('Manually triggering scan for:', firstDevice);
-                            handleDeviceSelect(firstDevice.id);
-                          }}
-                          className="mt-2 w-full bg-neon-blue"
-                          size="sm"
-                        >
-                          🧪 Test: Scan {availableDevices[0]?.name} Now
-                        </Button>
-                      )}
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-2 block">

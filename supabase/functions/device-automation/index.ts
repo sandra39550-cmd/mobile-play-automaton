@@ -333,14 +333,14 @@ async function checkADBConnection(deviceId: string): Promise<boolean> {
   try {
     const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
     if (!adbServerUrl) {
-      console.warn('ADB_SERVER_URL not configured, cannot check device status')
-      return false
+      console.error('⚠️ ADB_SERVER_URL not configured - device cannot be online without ADB server')
+      return false // CRITICAL: Without ADB server, device CANNOT be online
     }
 
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     const statusUrl = `${baseUrl}/devices`
     
-    console.log('Checking USB tethered devices at:', statusUrl)
+    console.log('🔍 Checking ADB server for connected devices at:', statusUrl)
     
     const response = await fetch(statusUrl, {
       method: 'GET',
@@ -349,29 +349,29 @@ async function checkADBConnection(deviceId: string): Promise<boolean> {
     })
     
     if (!response.ok) {
-      console.error('Failed to get ADB devices:', response.status, await response.text())
+      console.error('❌ ADB server request failed:', response.status, await response.text())
       return false
     }
     
     const result = await response.json()
     const connectedDevices = result.devices || []
     
-    console.log('Connected devices via ADB:', JSON.stringify(connectedDevices))
-    console.log(`Looking for device: ${deviceId}`)
+    console.log('📱 Connected devices via ADB:', JSON.stringify(connectedDevices))
+    console.log(`🔎 Looking for device: ${deviceId}`)
     
     // Check if our device is in the list of connected devices (USB or wireless)
     const isConnected = connectedDevices.some((d: any) => {
       const matchesSerial = d.id === deviceId || d.serial === deviceId
       // Handle both 'status' and 'type' field names, check for 'device' value
       const isDevice = d.status === 'device' || d.type === 'device'
-      console.log(`Comparing: ${d.id} === ${deviceId}, status/type: ${d.status || d.type}, match: ${matchesSerial && isDevice}`)
+      console.log(`  Comparing: ${d.id} === ${deviceId}, status/type: ${d.status || d.type}, match: ${matchesSerial && isDevice}`)
       return matchesSerial && isDevice
     })
     
-    console.log(`Device ${deviceId} final status: ${isConnected ? 'ONLINE' : 'OFFLINE'}`)
+    console.log(`✅ Device ${deviceId} final status: ${isConnected ? '🟢 ONLINE' : '🔴 OFFLINE'}`)
     return isConnected
   } catch (error) {
-    console.error('Error checking USB tethered device:', error.message)
+    console.error('❌ Error checking device via ADB:', error.message)
     return false
   }
 }
