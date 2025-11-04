@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Search, Filter, Bot, Smartphone, Play } from "lucide-react";
+import { Plus, Search, Filter, Bot, Smartphone, Play, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const GameBotDashboard = () => {
-  const { devices, sessions } = useDeviceAutomation();
+  const { devices, sessions, checkAllDeviceStatus, loadDevices } = useDeviceAutomation();
   const { games, deviceGames, isLoading, handleGameStatusChange, addGameSession, getAvailableGamesForDevice, scanGamesOnDevice, getStats } = useGameManagement();
   const [currentTab, setCurrentTab] = useState("bots");
   const [searchTerm, setSearchTerm] = useState("");
@@ -196,7 +196,23 @@ export const GameBotDashboard = () => {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm font-medium mb-2 block">Step 1: Select Your Device</label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium">Step 1: Select Your Device</label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            toast.loading('Checking device status...', { id: 'refresh-status' });
+                            await checkAllDeviceStatus();
+                            await loadDevices();
+                            toast.success('Device status updated', { id: 'refresh-status' });
+                          }}
+                          className="h-8 gap-1.5"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          Refresh
+                        </Button>
+                      </div>
                       <Select value={selectedDevice} onValueChange={handleDeviceSelect}>
                         <SelectTrigger className="bg-gaming-card border-gaming-border h-12">
                           <SelectValue placeholder="Choose your mobile device" />

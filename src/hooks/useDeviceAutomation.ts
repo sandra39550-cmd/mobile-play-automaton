@@ -47,11 +47,17 @@ export const useDeviceAutomation = () => {
     loadDevices()
     loadSessions()
     
+    // Check device status immediately on mount
+    setTimeout(() => checkAllDeviceStatus(), 500)
+    
     // Set up real-time subscriptions
     const devicesChannel = supabase
       .channel('devices-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'devices' }, 
-        () => loadDevices())
+        () => {
+          console.log('📡 Real-time update: devices table changed')
+          loadDevices()
+        })
       .subscribe()
 
     const sessionsChannel = supabase
@@ -62,6 +68,7 @@ export const useDeviceAutomation = () => {
 
     // Auto-check device status every 10 seconds
     const statusInterval = setInterval(() => {
+      console.log('⏰ Auto-checking device status...')
       checkAllDeviceStatus()
     }, 10000)
 
