@@ -504,23 +504,42 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
 
   if (deviceError || !device) {
     console.error('Device not found or error:', deviceError)
-    throw new Error('Device not found or offline')
+    throw new Error('Device not found')
   }
 
   console.log(`Device found: ${device.name}, status: ${device.status}, device_id: ${device.device_id}`)
 
-  // Simulate scanning installed games on the device
-  const installedGames = await simulateGameScan(device)
-  
-  console.log('=== SCAN COMPLETE, RETURNING GAMES ===')
-  console.log('Games found:', JSON.stringify(installedGames))
-  
-  return new Response(JSON.stringify({ 
-    success: true, 
-    games: installedGames
-  }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  })
+  if (device.status !== 'online') {
+    throw new Error(`Device ${device.name} is ${device.status}. Please ensure device is connected via ADB.`)
+  }
+
+  try {
+    // Scan installed games on the device
+    const installedGames = await simulateGameScan(device)
+    
+    console.log('=== SCAN COMPLETE, RETURNING GAMES ===')
+    console.log('Games found:', JSON.stringify(installedGames))
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      games: installedGames
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('=== SCAN FAILED ===')
+    console.error('Error:', error.message)
+    
+    // Return error response with proper status
+    return new Response(JSON.stringify({ 
+      success: false,
+      error: error.message,
+      games: []
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
 }
 
 async function simulateGameScan(device: any): Promise<any[]> {

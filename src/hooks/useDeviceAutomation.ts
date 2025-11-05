@@ -271,14 +271,20 @@ export const useDeviceAutomation = () => {
 
       if (error) {
         console.error('Edge function error:', error)
-        throw error
+        throw new Error(error.message || 'Failed to scan device')
+      }
+
+      if (!data.success) {
+        console.error('Scan failed:', data.error)
+        throw new Error(data.error || 'Failed to scan device games')
       }
       
       console.log('Games returned from edge function:', data.games)
-      return data.games
-    } catch (error) {
+      return data.games || []
+    } catch (error: any) {
       console.error('Error scanning device games:', error)
-      toast.error('Failed to scan device games')
+      const errorMessage = error?.message || 'Failed to scan device games'
+      toast.error(errorMessage)
       throw error
     }
   }
