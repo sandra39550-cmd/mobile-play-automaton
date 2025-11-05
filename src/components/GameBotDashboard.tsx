@@ -55,13 +55,13 @@ export const GameBotDashboard = () => {
     // Check device status before scanning
     if (device.status === 'offline') {
       console.log('❌ Device is offline, aborting scan');
-      toast.error(`❌ ${device.name} is OFFLINE. Please connect the device via ADB and ensure the ADB server is running.`, { duration: 5000 });
+      toast.error(`❌ ${device.name} is OFFLINE\n\nPlease:\n1. Connect device via USB\n2. Enable USB debugging\n3. Run: adb devices\n4. Ensure ADB server is running on localhost:3000`, { duration: 8000 });
       return;
     }
     
     console.log('✅ Device is online, starting scan...');
     setIsScanning(true);
-    toast.loading(`🔍 Scanning ${device.name} for installed games...`, { id: 'scan-games' });
+    toast.loading(`🔍 Scanning ${device.name} for installed games via ADB...`, { id: 'scan-games' });
     
     try {
       console.log('🔍 Calling scanGamesOnDevice...');
@@ -73,11 +73,19 @@ export const GameBotDashboard = () => {
         toast.success(`✅ Found ${scannedGames.length} game(s) on ${device.name}`, { id: 'scan-games' });
       } else {
         console.log('⚠️ No games returned from scan');
-        toast.warning(`⚠️ No games found on ${device.name}. Make sure the ADB server is running at localhost:3000 and games are installed.`, { id: 'scan-games', duration: 6000 });
+        toast.warning(`⚠️ No games found on ${device.name}\n\nPlease ensure:\n1. Games are installed on device\n2. ADB server is running: cd adb-server && node server.js\n3. ngrok is tunneling localhost:3000`, { id: 'scan-games', duration: 10000 });
       }
     } catch (error) {
       console.error('❌ Scan error:', error);
-      toast.error(`Failed to scan: ${error?.message || 'Check ADB connection and server'}`, { id: 'scan-games' });
+      const errorMsg = error?.message || 'Unknown error';
+      
+      if (errorMsg.includes('ADB server is offline')) {
+        toast.error(`🔴 ADB Server Connection Failed\n\n${errorMsg}\n\nTroubleshooting:\n1. Start ADB server: cd adb-server && node server.js\n2. Start ngrok: ngrok http 3000\n3. Update ADB_SERVER_URL with your ngrok URL`, { id: 'scan-games', duration: 15000 });
+      } else if (errorMsg.includes('timeout')) {
+        toast.error(`⏱️ Scan Timeout\n\nADB server took too long to respond. Check your connection.`, { id: 'scan-games', duration: 8000 });
+      } else {
+        toast.error(`❌ Scan Failed: ${errorMsg.substring(0, 100)}`, { id: 'scan-games', duration: 8000 });
+      }
     } finally {
       setIsScanning(false);
     }

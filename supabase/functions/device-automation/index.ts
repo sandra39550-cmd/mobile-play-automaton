@@ -524,26 +524,41 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
 }
 
 async function simulateGameScan(device: any): Promise<any[]> {
-  try {
-    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
-    if (!adbServerUrl) {
-      console.warn('⚠️ ADB_SERVER_URL not configured, returning mock data')
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      return [
-        { name: "Candy Crush Saga", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" },
-        { name: "Clash of Clans", icon: "⚔️", category: "Strategy", packageName: "com.supercell.clashofclans" },
-        { name: "Pokemon GO", icon: "🎮", category: "Adventure", packageName: "com.nianticlabs.pokemongo" }
-      ]
-    }
+  console.log(`🔍 Scanning real games on device: ${device.name} (device_id: ${device.device_id})`)
+  
+  const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+  if (!adbServerUrl) {
+    const errorMsg = '❌ ADB_SERVER_URL not configured - cannot scan real games'
+    console.error(errorMsg)
+    throw new Error('ADB server not configured. Please set ADB_SERVER_URL environment variable.')
+  }
 
-    console.log(`🔍 Scanning real games on device: ${device.name} (device_id: ${device.device_id})`)
+  // Ensure URL has protocol
+  const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+  
+  // First check if ADB server is reachable
+  console.log(`🏥 Health check: ${baseUrl}/health`)
+  try {
+    const healthResponse = await fetch(`${baseUrl}/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000)
+    })
     
-    // Ensure URL has protocol
-    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
-    const scanUrl = `${baseUrl}/scan-apps`
-    console.log(`📡 Calling ADB server at: ${scanUrl}`)
-    console.log(`📤 Request body:`, JSON.stringify({ deviceId: device.device_id, category: 'games' }))
-    
+    if (!healthResponse.ok) {
+      throw new Error(`ADB server health check failed with status ${healthResponse.status}`)
+    }
+    console.log('✅ ADB server is reachable')
+  } catch (healthError) {
+    console.error('❌ ADB server health check failed:', healthError.message)
+    throw new Error(`ADB server is offline at ${baseUrl}. Please ensure:\n1. ADB server is running: cd adb-server && node server.js\n2. ngrok is tunneling localhost:3000: ngrok http 3000\n3. ADB_SERVER_URL env var is set to your ngrok URL`)
+  }
+
+  // Now scan for games
+  const scanUrl = `${baseUrl}/scan-apps`
+  console.log(`📡 Calling ADB server at: ${scanUrl}`)
+  console.log(`📤 Request body:`, JSON.stringify({ deviceId: device.device_id, category: 'games' }))
+  
+  try {
     const response = await fetch(scanUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -551,20 +566,15 @@ async function simulateGameScan(device: any): Promise<any[]> {
         deviceId: device.device_id,
         category: 'games'
       }),
-      signal: AbortSignal.timeout(10000) // 10 second timeout
+      signal: AbortSignal.timeout(15000) // 15 second timeout for scanning
     })
     
     console.log(`📥 ADB server response status: ${response.status}`)
     
     if (!response.ok) {
       const errorText = await response.text()
-      console.error(`❌ Failed to scan games (${response.status}):`, errorText)
-      console.log('⚠️ Returning mock games data as fallback')
-      return [
-        { name: "Candy Crush Saga", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" },
-        { name: "Clash of Clans", icon: "⚔️", category: "Strategy", packageName: "com.supercell.clashofclans" },
-        { name: "Pokemon GO", icon: "🎮", category: "Adventure", packageName: "com.nianticlabs.pokemongo" }
-      ]
+      console.error(`❌ Failed to scan games (${response.status}):`, errorText.substring(0, 500))
+      throw new Error(`ADB server returned ${response.status}: ${errorText.substring(0, 200)}`)
     }
     
     const result = await response.json()
@@ -573,29 +583,25 @@ async function simulateGameScan(device: any): Promise<any[]> {
     console.log(`📊 Number of apps found: ${(result.apps || []).length}`)
     
     if (!result.apps || result.apps.length === 0) {
-      console.warn('⚠️ ADB server returned empty apps array!')
-      console.log('Device might not have any games installed or ADB connection issue')
+      console.warn('⚠️ ADB server returned empty apps array')
+      console.log('Device might not have any games installed')
       return []
     }
     
     // Map game apps to expected format
     const mappedGames = (result.apps || []).map((app: any) => ({
       name: app.name || app.packageName,
-      icon: "🎮",
+      icon: app.icon || "🎮",
       category: app.category || "Game",
-      packageName: app.packageName
+      packageName: app.packageName,
+      isInstalled: true
     }))
     
-    console.log(`✅ Returning ${mappedGames.length} games:`, JSON.stringify(mappedGames.map(g => g.name)))
+    console.log(`✅ Successfully scanned ${mappedGames.length} games:`, mappedGames.map(g => g.name).join(', '))
     return mappedGames
   } catch (error) {
-    console.error('❌ Error scanning games:', error)
-    console.log('⚠️ Returning mock games data as fallback')
-    return [
-      { name: "Candy Crush Saga", icon: "🍭", category: "Puzzle", packageName: "com.king.candycrushsaga" },
-      { name: "Clash of Clans", icon: "⚔️", category: "Strategy", packageName: "com.supercell.clashofclans" },
-      { name: "Pokemon GO", icon: "🎮", category: "Adventure", packageName: "com.nianticlabs.pokemongo" }
-    ]
+    console.error('❌ Error scanning games:', error.message)
+    throw error
   }
 }
 
