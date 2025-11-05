@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BotCard } from "./BotCard";
 import { StatsOverview } from "./StatsOverview";
 import { DeviceConnection } from "./DeviceConnection";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Search, Filter, Bot, Smartphone, Play, RefreshCw } from "lucide-react";
+import { Plus, Search, Filter, Bot, Smartphone, Play, RefreshCw, Scan } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
@@ -25,6 +25,16 @@ export const GameBotDashboard = () => {
   const [selectedDevice, setSelectedDevice] = useState("");
   const [selectedGame, setSelectedGame] = useState("");
   const [isScanning, setIsScanning] = useState(false);
+
+  // Auto-scan when dialog opens if we have online devices
+  useEffect(() => {
+    if (showAddGame && onlineDevices.length > 0 && !selectedDevice) {
+      // Auto-select first online device and scan it
+      const firstOnline = onlineDevices[0];
+      handleDeviceSelect(firstOnline.id);
+    }
+  }, [showAddGame]);
+
 
   const categories = ["all", "Strategy", "Puzzle", "Adventure", "Casino", "Battle Royale", "Endless Runner"];
   const onlineDevices = devices.filter(d => d.status === 'online');
@@ -215,20 +225,34 @@ export const GameBotDashboard = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="text-sm font-medium">Step 1: Select Your Device</label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={async () => {
-                            toast.loading('Checking device status...', { id: 'refresh-status' });
-                            await checkAllDeviceStatus();
-                            await loadDevices();
-                            toast.success('Device status updated', { id: 'refresh-status' });
-                          }}
-                          className="h-8 gap-1.5"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          Refresh
-                        </Button>
+                        <div className="flex gap-2">
+                          {selectedDevice && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeviceSelect(selectedDevice)}
+                              disabled={isScanning}
+                              className="h-8 gap-1.5"
+                            >
+                              <Scan className="w-3.5 h-3.5" />
+                              {isScanning ? 'Scanning...' : 'Scan Games'}
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async () => {
+                              toast.loading('Checking device status...', { id: 'refresh-status' });
+                              await checkAllDeviceStatus();
+                              await loadDevices();
+                              toast.success('Device status updated', { id: 'refresh-status' });
+                            }}
+                            className="h-8 gap-1.5"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Refresh
+                          </Button>
+                        </div>
                       </div>
                       <Select value={selectedDevice} onValueChange={handleDeviceSelect}>
                         <SelectTrigger className="bg-gaming-card border-gaming-border h-12 hover:bg-gaming-hover">
