@@ -25,6 +25,7 @@ export const GameBotDashboard = () => {
   const [selectedDevice, setSelectedDevice] = useState("");
   const [selectedGame, setSelectedGame] = useState("");
   const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   // Auto-scan when dialog opens if we have online devices
   useEffect(() => {
@@ -53,6 +54,7 @@ export const GameBotDashboard = () => {
     console.log('🎯 handleDeviceSelect called with deviceId:', deviceId);
     setSelectedDevice(deviceId);
     setSelectedGame("");
+    setScanError(null);
     
     const device = availableDevices.find(d => d.id === deviceId);
     console.log('📱 Found device:', device);
@@ -88,6 +90,7 @@ export const GameBotDashboard = () => {
     } catch (error) {
       console.error('❌ Scan error:', error);
       const errorMsg = error?.message || 'Unknown error';
+      setScanError(errorMsg);
       
       if (errorMsg.includes('ADB server is offline')) {
         toast.error(`🔴 ADB Server Connection Failed\n\n${errorMsg}\n\nTroubleshooting:\n1. Start ADB server: cd adb-server && node server.js\n2. Start ngrok: ngrok http 3000\n3. Update ADB_SERVER_URL with your ngrok URL`, { id: 'scan-games', duration: 15000 });
@@ -290,7 +293,7 @@ export const GameBotDashboard = () => {
                     <div>
                       <label className="text-sm font-medium mb-2 block">
                         Step 2: Select Game from Device
-                        {selectedDevice && deviceGames[selectedDevice] && !isScanning && (
+                        {selectedDevice && deviceGames[selectedDevice] && !isScanning && !scanError && (
                           <Badge variant="outline" className="ml-2 text-neon-green border-neon-green bg-neon-green/10">
                             ✅ {availableGamesForDevice.length} games found on {availableDevices.find(d => d.id === selectedDevice)?.name}
                           </Badge>
@@ -300,9 +303,14 @@ export const GameBotDashboard = () => {
                             🔍 Scanning device via ADB...
                           </Badge>
                         )}
-                        {selectedDevice && !deviceGames[selectedDevice] && !isScanning && (
+                        {scanError && !isScanning && (
+                          <Badge variant="outline" className="ml-2 text-red-500 border-red-500 bg-red-500/10">
+                            ❌ Scan failed
+                          </Badge>
+                        )}
+                        {selectedDevice && !deviceGames[selectedDevice] && !isScanning && !scanError && (
                           <Badge variant="outline" className="ml-2 text-yellow-500 border-yellow-500 bg-yellow-500/10">
-                            ⏳ Waiting for scan...
+                            ⏳ Click "Scan Games" button above
                           </Badge>
                         )}
                       </label>

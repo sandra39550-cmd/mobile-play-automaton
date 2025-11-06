@@ -493,27 +493,39 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
   console.log('=== SCAN DEVICE GAMES CALLED ===')
   console.log('Scanning games on device:', deviceId)
   
-  // Verify device is online
-  const { data: device, error: deviceError } = await supabaseClient
-    .from('devices')
-    .select('*')
-    .eq('id', deviceId)
-    .single()
-
-  console.log('Device lookup result:', device, 'Error:', deviceError)
-
-  if (deviceError || !device) {
-    console.error('Device not found or error:', deviceError)
-    throw new Error('Device not found')
-  }
-
-  console.log(`Device found: ${device.name}, status: ${device.status}, device_id: ${device.device_id}`)
-
-  if (device.status !== 'online') {
-    throw new Error(`Device ${device.name} is ${device.status}. Please ensure device is connected via ADB.`)
-  }
-
   try {
+    // Verify device is online
+    const { data: device, error: deviceError } = await supabaseClient
+      .from('devices')
+      .select('*')
+      .eq('id', deviceId)
+      .single()
+
+    console.log('Device lookup result:', device, 'Error:', deviceError)
+
+    if (deviceError || !device) {
+      console.error('Device not found or error:', deviceError)
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: 'Device not found',
+        games: []
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    console.log(`Device found: ${device.name}, status: ${device.status}, device_id: ${device.device_id}`)
+
+    if (device.status !== 'online') {
+      return new Response(JSON.stringify({ 
+        success: false,
+        error: `Device ${device.name} is ${device.status}. Please ensure device is connected via ADB.`,
+        games: []
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     // Scan installed games on the device
     const installedGames = await simulateGameScan(device)
     
@@ -530,13 +542,12 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
     console.error('=== SCAN FAILED ===')
     console.error('Error:', error.message)
     
-    // Return error response with proper status
+    // Always return 200 with success:false for proper error handling
     return new Response(JSON.stringify({ 
       success: false,
       error: error.message,
       games: []
     }), {
-      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
