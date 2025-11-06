@@ -4,6 +4,8 @@ const { exec } = require('child_process');
 const util = require('util');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const https = require('https');
 
 const execPromise = util.promisify(exec);
 
@@ -12,6 +14,9 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+const NGROK_API_PORT = 4040;
+const SUPABASE_PROJECT_ID = 'smyhauaifoqargpcjpkf';
+const UPDATE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/update-adb-url`;
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -237,9 +242,113 @@ app.post('/device-info', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// Function to detect ngrok URL
+async function detectNgrokUrl() {
+  return new Promise((resolve) => {
+    const req = http.get(`http://localhost:${NGROK_API_PORT}/api/tunnels`, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        try {
+          const tunnels = JSON.parse(data);
+          const httpsTunnel = tunnels.tunnels?.find(t => t.proto === 'https');
+          
+          if (httpsTunnel && httpsTunnel.public_url) {
+            console.log('🔗 Detected ngrok tunnel:', httpsTunnel.public_url);
+            resolve(httpsTunnel.public_url);
+          } else {
+            resolve(null);
+          }
+        } catch (error) {
+          console.error('Error parsing ngrok response:', error);
+          resolve(null);
+        }
+      });
+    });
+    
+    req.on('error', () => {
+      // Silently fail if ngrok not running
+      resolve(null);
+    });
+    
+    req.end();
+  });
+}
+
+// Function to report ngrok URL to Supabase
+async function reportNgrokUrl(ngrokUrl) {
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({ serverUrl: ngrokUrl });
+    
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      }
+    };
+    
+    const req = https.request(UPDATE_URL, options, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          console.log('✅ Successfully reported ngrok URL to Supabase');
+          resolve(true);
+        } else {
+          console.error('❌ Failed to report ngrok URL:', res.statusCode);
+          resolve(false);
+        }
+      });
+    });
+    
+    req.on('error', (error) => {
+      console.error('❌ Error reporting ngrok URL:', error.message);
+      resolve(false);
+    });
+    
+    req.write(postData);
+    req.end();
+  });
+}
+
+// Check for ngrok tunnel and report it
+async function checkAndReportNgrok() {
+  const ngrokUrl = await detectNgrokUrl();
+  
+  if (ngrokUrl) {
+    await reportNgrokUrl(ngrokUrl);
+  }
+}
+
+app.listen(PORT, async () => {
   console.log(`🚀 ADB HTTP Server running on http://localhost:${PORT}`);
   console.log(`   Health check: http://localhost:${PORT}/health`);
-  console.log(`\nMake sure ADB is installed and in your PATH`);
-  console.log(`Test with: adb devices\n`);
+  console.log('');
+  
+  // Check for ngrok on startup
+  const ngrokUrl = await detectNgrokUrl();
+  if (ngrokUrl) {
+    console.log('🌐 ngrok tunnel detected:', ngrokUrl);
+    console.log('📡 Reporting to Supabase...');
+    await reportNgrokUrl(ngrokUrl);
+  } else {
+    console.log('📍 Running on localhost only (no ngrok detected)');
+    console.log('💡 Start ngrok with: ngrok http 3000');
+  }
+  
+  console.log('');
+  console.log('🔄 Monitoring for ngrok tunnel changes every 30s...');
+  console.log('');
+  
+  // Check every 30 seconds for ngrok URL changes
+  setInterval(checkAndReportNgrok, 30000);
 });

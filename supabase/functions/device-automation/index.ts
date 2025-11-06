@@ -6,6 +6,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Get ADB server URL from database (auto-detected) or fallback to env var
+async function getAdbServerUrl(supabaseClient: any): Promise<string> {
+  try {
+    // Try to get the URL from the database first (auto-detected by ADB server)
+    const { data, error } = await supabaseClient
+      .from('adb_server_config')
+      .select('server_url')
+      .eq('is_active', true)
+      .order('last_updated', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (!error && data?.server_url) {
+      console.log('📡 Using auto-detected ADB server URL from database:', data.server_url)
+      return data.server_url
+    }
+
+    // Fallback to environment variable if database lookup fails
+    const envUrl = Deno.env.get('ADB_SERVER_URL')
+    if (envUrl) {
+      console.log('⚙️  Using ADB server URL from environment variable:', envUrl)
+      return envUrl
+    }
+
+    throw new Error('ADB server URL not found. Please start your ADB server with ngrok, or manually set ADB_SERVER_URL.')
+  } catch (error) {
+    console.error('Error getting ADB server URL:', error)
+    throw error
+  }
+}
+
+async function checkAdbServerHealth(adbServerUrl: string | null): Promise<boolean> {
+  if (!adbServerUrl) {
+    return false
+  }
+
 interface DeviceAction {
   type: 'tap' | 'swipe' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
   coordinates?: { x: number; y: number }
@@ -74,7 +110,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   
   // Get real device ID from ADB
   let realDeviceId = deviceInfo.deviceId
-  const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+  const adbServerUrl = await getAdbServerUrl(supabaseClient)
   
   if (adbServerUrl) {
     try {
@@ -100,7 +136,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   }
   
   // Check device status
-  const deviceStatus = await checkADBConnection(realDeviceId)
+  const deviceStatus = await checkADBConnection(realDeviceId, supabaseClient)
   
   // Check if device already exists (check by name to allow ID updates)
   const { data: existingDevice } = await supabaseClient
@@ -294,7 +330,7 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
     }
 
     // Check if device is actually connected via ADB
-    const isConnected = await checkADBConnection(device.device_id)
+    const isConnected = await checkADBConnection(device.device_id, supabaseClient)
     
     // Update device status in database
     const newStatus = isConnected ? 'online' : 'offline'
@@ -329,12 +365,24 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
 }
 
 // Check if device is connected via ADB (USB or wireless)
-async function checkADBConnection(deviceId: string): Promise<boolean> {
+async function checkADBConnection(deviceId: string, supabaseClient?: any): Promise<boolean> {
   try {
-    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    let adbServerUrl: string | null = null
+    
+    if (supabaseClient) {
+      try {
+        adbServerUrl = await getAdbServerUrl(supabaseClient)
+      } catch (error) {
+        console.error('⚠️ Could not get ADB server URL:', error.message)
+        return false
+      }
+    } else {
+      adbServerUrl = Deno.env.get('ADB_SERVER_URL') || null
+    }
+    
     if (!adbServerUrl) {
       console.error('⚠️ ADB_SERVER_URL not configured - device cannot be online without ADB server')
-      return false // CRITICAL: Without ADB server, device CANNOT be online
+      return false
     }
 
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
@@ -402,13 +450,13 @@ async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
         const connectedDevices = devicesResult.devices || []
         console.log('Found connected devices:', JSON.stringify(connectedDevices))
         
-        // If there are connected devices, use the first one's ID
-        if (connectedDevices.length > 0) {
-          const realDeviceId = connectedDevices[0].id
-          console.log(`Using real device ID from ADB: ${realDeviceId}`)
-          // Check connection using the real device ID
-          return await checkADBConnection(realDeviceId)
-        }
+          // If there are connected devices, use the first one's ID
+          if (connectedDevices.length > 0) {
+            const realDeviceId = connectedDevices[0].id
+            console.log(`Using real device ID from ADB: ${realDeviceId}`)
+            // Check connection using the real device ID - no supabaseClient needed in this helper
+            return await checkADBConnection(realDeviceId)
+          }
       }
     } catch (error) {
       console.error('Error getting device list:', error)
@@ -424,6 +472,7 @@ async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
 
 async function simulateDeviceAction(action: DeviceAction): Promise<{ success: boolean; result?: any }> {
   try {
+    // Note: This function is called without supabaseClient, so we use env var fallback
     const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
     if (!adbServerUrl) {
       console.warn('ADB_SERVER_URL not configured, using simulation mode')
@@ -458,6 +507,7 @@ async function simulateDeviceAction(action: DeviceAction): Promise<{ success: bo
 
 async function simulateScreenshot(deviceId: string): Promise<string> {
   try {
+    // Note: This function is called without supabaseClient, so we use env var fallback
     const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
     if (!adbServerUrl) {
       console.warn('ADB_SERVER_URL not configured, using placeholder')
@@ -490,10 +540,11 @@ async function simulateScreenshot(deviceId: string): Promise<string> {
 }
 
 async function scanDeviceGames(supabaseClient: any, deviceId: string) {
-  console.log('=== SCAN DEVICE GAMES CALLED ===')
-  console.log('Scanning games on device:', deviceId)
-  
   try {
+    console.log('🎮 Scanning device for games:', deviceId)
+    
+    const adbServerUrl = await getAdbServerUrl(supabaseClient)
+    
     // Verify device is online
     const { data: device, error: deviceError } = await supabaseClient
       .from('devices')
@@ -527,7 +578,7 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
     }
 
     // Scan installed games on the device
-    const installedGames = await simulateGameScan(device)
+    const installedGames = await simulateGameScan(device, adbServerUrl)
     
     console.log('=== SCAN COMPLETE, RETURNING GAMES ===')
     console.log('Games found:', JSON.stringify(installedGames))
@@ -553,14 +604,13 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
   }
 }
 
-async function simulateGameScan(device: any): Promise<any[]> {
+async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[]> {
   console.log(`🔍 Scanning real games on device: ${device.name} (device_id: ${device.device_id})`)
   
-  const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
   if (!adbServerUrl) {
     const errorMsg = '❌ ADB_SERVER_URL not configured - cannot scan real games'
     console.error(errorMsg)
-    throw new Error('ADB server not configured. Please set ADB_SERVER_URL environment variable.')
+    throw new Error('ADB server not configured. Please ensure ngrok tunnel is running.')
   }
 
   // Ensure URL has protocol

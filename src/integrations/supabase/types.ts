@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      adb_server_config: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          last_updated: string | null
+          server_url: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_updated?: string | null
+          server_url: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_updated?: string | null
+          server_url?: string
+        }
+        Relationships: []
+      }
       bot_actions: {
         Row: {
           action_type: string
@@ -122,6 +146,7 @@ export type Database = {
           adb_host: string | null
           adb_port: number | null
           android_version: string | null
+          connection_type: string | null
           created_at: string | null
           device_id: string
           id: string
@@ -139,6 +164,7 @@ export type Database = {
           adb_host?: string | null
           adb_port?: number | null
           android_version?: string | null
+          connection_type?: string | null
           created_at?: string | null
           device_id: string
           id?: string
@@ -156,6 +182,7 @@ export type Database = {
           adb_host?: string | null
           adb_port?: number | null
           android_version?: string | null
+          connection_type?: string | null
           created_at?: string | null
           device_id?: string
           id?: string

@@ -2,3 +2,9 @@ project_id = "smyhauaifoqargpcjpkf"
 
 [functions.device-automation]
 verify_jwt = false
+
+[functions.game-vision]
+verify_jwt = false
+
+[functions.update-adb-url]
+verify_jwt = false
