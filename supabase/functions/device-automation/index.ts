@@ -6,6 +6,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+interface DeviceAction {
+  type: 'tap' | 'swipe' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
+  coordinates?: { x: number; y: number }
+  swipeDirection?: 'up' | 'down' | 'left' | 'right'
+  packageName?: string
+  duration?: number
+}
+
+interface GameBot {
+  sessionId: string
+  deviceId: string
+  gameName: string
+  packageName: string
+  actions: DeviceAction[]
+}
+
 // Get ADB server URL from database (auto-detected) or fallback to env var
 async function getAdbServerUrl(supabaseClient: any): Promise<string> {
   try {
@@ -35,27 +51,6 @@ async function getAdbServerUrl(supabaseClient: any): Promise<string> {
     console.error('Error getting ADB server URL:', error)
     throw error
   }
-}
-
-async function checkAdbServerHealth(adbServerUrl: string | null): Promise<boolean> {
-  if (!adbServerUrl) {
-    return false
-  }
-
-interface DeviceAction {
-  type: 'tap' | 'swipe' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
-  coordinates?: { x: number; y: number }
-  swipeDirection?: 'up' | 'down' | 'left' | 'right'
-  packageName?: string
-  duration?: number
-}
-
-interface GameBot {
-  sessionId: string
-  deviceId: string
-  gameName: string
-  packageName: string
-  actions: DeviceAction[]
 }
 
 serve(async (req) => {
