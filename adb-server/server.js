@@ -167,52 +167,79 @@ app.post('/screenshot', async (req, res) => {
 });
 
 // Scan installed apps (games)
-app.post('/scan-apps', async (req, res) => {
-  const { deviceId, category } = req.body;
-  
-  console.log('Scanning apps on device:', deviceId);
-  
-  try {
-    // List third-party packages (non-system apps)
-    const { stdout } = await execPromise('adb shell pm list packages -3');
-    
-    const packages = stdout.split('\n')
-      .map(line => line.replace('package:', '').trim())
-      .filter(pkg => pkg);
-    
-    // Get app names
-    const apps = [];
-    for (const pkg of packages) {
-      try {
-        const { stdout: labelOut } = await execPromise(
-          `adb shell dumpsys package ${pkg} | grep -A 1 "applicationInfo"`
-        );
-        
-        const name = pkg.split('.').pop().replace(/([A-Z])/g, ' $1').trim() || pkg;
-        
-        apps.push({
-          name: name.charAt(0).toUpperCase() + name.slice(1),
-          packageName: pkg,
-          category: category || 'Game',
-          icon: '🎮'
-        });
-      } catch (err) {
-        // Skip apps that can't be queried
-        console.log(`Skipping package: ${pkg}`);
-      }
+async function handleScanApps(deviceId, category) {
+  // List third-party packages (non-system apps)
+  const { stdout } = await execPromise('adb shell pm list packages -3');
+
+  const packages = stdout
+    .split('\n')
+    .map((line) => line.replace('package:', '').trim())
+    .filter((pkg) => pkg);
+
+  const apps = [];
+  for (const pkg of packages) {
+    try {
+      // Best-effort query (not strictly required, but keeps behavior consistent)
+      await execPromise(`adb shell dumpsys package ${pkg} | grep -A 1 "applicationInfo"`);
+
+      const name = pkg.split('.').pop().replace(/([A-Z])/g, ' $1').trim() || pkg;
+
+      apps.push({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        packageName: pkg,
+        category: category || 'Game',
+        icon: '🎮',
+      });
+    } catch (err) {
+      // Skip apps that can't be queried
+      console.log(`Skipping package: ${pkg}`);
     }
-    
-    console.log(`Found ${apps.length} apps`);
-    
-    res.json({ 
-      success: true, 
-      apps 
+  }
+
+  console.log(`Found ${apps.length} apps`);
+  return apps;
+}
+
+// POST version (preferred)
+app.post('/scan-apps', async (req, res) => {
+  const { deviceId, category } = req.body || {};
+
+  console.log('Scanning apps on device (POST):', deviceId);
+
+  try {
+    const apps = await handleScanApps(deviceId, category);
+
+    res.json({
+      success: true,
+      apps,
     });
   } catch (error) {
     console.error('Scan error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// GET fallback (helps when proxies/clients can’t POST)
+app.get('/scan-apps', async (req, res) => {
+  const { deviceId, category } = req.query || {};
+
+  console.log('Scanning apps on device (GET):', deviceId);
+
+  try {
+    const apps = await handleScanApps(deviceId, category);
+
+    res.json({
+      success: true,
+      apps,
+    });
+  } catch (error) {
+    console.error('Scan error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 });
