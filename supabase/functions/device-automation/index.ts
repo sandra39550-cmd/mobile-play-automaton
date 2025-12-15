@@ -654,15 +654,55 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
     const response = await fetch(scanUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         deviceId: device.device_id,
-        category: 'games'
+        category: 'games',
       }),
-      signal: AbortSignal.timeout(15000) // 15 second timeout for scanning
+      signal: AbortSignal.timeout(15000), // 15 second timeout for scanning
     })
-    
+
     console.log(`📥 ADB server response status: ${response.status}`)
-    
+
+    // Some proxies / mismatched servers return 404 "Cannot POST /scan-apps".
+    // Fall back to GET /scan-apps?deviceId=...&category=games.
+    if (!response.ok && response.status === 404) {
+      const fallbackUrl = `${baseUrl}/scan-apps?deviceId=${encodeURIComponent(device.device_id)}&category=${encodeURIComponent('games')}`
+      console.warn(`↩️ Falling back to GET scan endpoint: ${fallbackUrl}`)
+
+      const fallbackRes = await fetch(fallbackUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(15000),
+      })
+
+      console.log(`📥 ADB server fallback status: ${fallbackRes.status}`)
+
+      if (!fallbackRes.ok) {
+        const errorText = await fallbackRes.text()
+        console.error(`❌ Failed to scan games (fallback ${fallbackRes.status}):`, errorText.substring(0, 500))
+        throw new Error(`ADB server returned ${fallbackRes.status}: ${errorText.substring(0, 200)}`)
+      }
+
+      const result = await fallbackRes.json()
+      console.log(`📦 Raw ADB server response (fallback):`, JSON.stringify(result))
+
+      const apps = result.apps || []
+      if (!apps.length) {
+        console.warn('⚠️ ADB server returned empty apps array (fallback)')
+        return []
+      }
+
+      const mappedGames = apps.map((app: any) => ({
+        name: app.name || app.packageName,
+        icon: app.icon || '🎮',
+        category: app.category || 'Game',
+        packageName: app.packageName,
+        isInstalled: true,
+      }))
+
+      console.log(`✅ Successfully scanned ${mappedGames.length} games (fallback):`, mappedGames.map((g: any) => g.name).join(', '))
+      return mappedGames
+    }
+
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`❌ Failed to scan games (${response.status}):`, errorText.substring(0, 500))
