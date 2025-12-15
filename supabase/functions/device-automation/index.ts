@@ -6,6 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// ngrok free plan may show an interstitial unless we send this header.
+const ngrokBypassHeaders = {
+  'ngrok-skip-browser-warning': 'true',
+}
+
 interface DeviceAction {
   type: 'tap' | 'swipe' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
   coordinates?: { x: number; y: number }
@@ -622,6 +627,10 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
     try {
       const res = await fetch(url, {
         method: 'GET',
+        headers: {
+          ...ngrokBypassHeaders,
+          'Content-Type': 'application/json',
+        },
         signal: AbortSignal.timeout(5000),
       })
 
@@ -653,7 +662,10 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
   try {
     const response = await fetch(scanUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        ...ngrokBypassHeaders,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
         deviceId: device.device_id,
         category: 'games',
@@ -671,6 +683,10 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
 
       const fallbackRes = await fetch(fallbackUrl, {
         method: 'GET',
+        headers: {
+          ...ngrokBypassHeaders,
+          'Content-Type': 'application/json',
+        },
         signal: AbortSignal.timeout(15000),
       })
 
