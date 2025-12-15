@@ -612,21 +612,38 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
   const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
   
   // First check if ADB server is reachable
-  console.log(`🏥 Health check: ${baseUrl}/health`)
-  try {
-    const healthResponse = await fetch(`${baseUrl}/health`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5000)
-    })
-    
-    if (!healthResponse.ok) {
-      throw new Error(`ADB server health check failed with status ${healthResponse.status}`)
+  const healthPaths = ['/health', '/devices']
+  let reachable = false
+
+  for (const path of healthPaths) {
+    const url = `${baseUrl}${path}`
+    console.log(`🏥 Health check: ${url}`)
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      })
+
+      if (res.ok) {
+        reachable = true
+        break
+      }
+
+      // If /health isn't implemented, many servers return 404; try next endpoint.
+      console.warn(`⚠️ Health check ${path} returned status ${res.status}`)
+    } catch (e) {
+      console.warn(`⚠️ Health check ${path} failed: ${e?.message ?? String(e)}`)
     }
-    console.log('✅ ADB server is reachable')
-  } catch (healthError) {
-    console.error('❌ ADB server health check failed:', healthError.message)
-    throw new Error(`ADB server is offline at ${baseUrl}. Please ensure:\n1. ADB server is running: cd adb-server && node server.js\n2. ngrok is tunneling localhost:3000: ngrok http 3000\n3. ADB_SERVER_URL env var is set to your ngrok URL`)
   }
+
+  if (!reachable) {
+    throw new Error(
+      `ADB server is offline at ${baseUrl}. Please ensure:\n1. ADB server is running: cd adb-server && node server.js\n2. ngrok is tunneling localhost:3000: ngrok http 3000\n3. ADB_SERVER_URL env var is set to your ngrok URL`
+    )
+  }
+
+  console.log('✅ ADB server is reachable')
 
   // Now scan for games
   const scanUrl = `${baseUrl}/scan-apps`
