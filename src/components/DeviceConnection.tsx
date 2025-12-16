@@ -1,17 +1,22 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Smartphone, Wifi, WifiOff, Activity, Trash2, RefreshCw } from 'lucide-react'
+import { Smartphone, Wifi, WifiOff, Activity, Trash2, RefreshCw, Server, ExternalLink, Check, Copy } from 'lucide-react'
 import { useDeviceAutomation } from '@/hooks/useDeviceAutomation'
+import { supabase } from '@/integrations/supabase/client'
 import { toast } from 'sonner'
 
 export const DeviceConnection = () => {
   const { devices, connectDevice, deleteDevice, isLoading } = useDeviceAutomation()
   const [showConnectionForm, setShowConnectionForm] = useState(false)
+  const [adbServerUrl, setAdbServerUrl] = useState('')
+  const [newAdbUrl, setNewAdbUrl] = useState('')
+  const [isUpdatingUrl, setIsUpdatingUrl] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     deviceId: '',
@@ -21,6 +26,53 @@ export const DeviceConnection = () => {
     screenWidth: 1080,
     screenHeight: 1920
   })
+
+  // Fetch current ADB server URL
+  useEffect(() => {
+    const fetchAdbUrl = async () => {
+      const { data, error } = await supabase
+        .from('adb_server_config')
+        .select('server_url, last_updated')
+        .eq('is_active', true)
+        .single()
+      
+      if (data && !error) {
+        setAdbServerUrl(data.server_url)
+        setNewAdbUrl(data.server_url)
+        setLastUpdated(data.last_updated)
+      }
+    }
+    fetchAdbUrl()
+  }, [])
+
+  const handleUpdateAdbUrl = async () => {
+    if (!newAdbUrl.trim()) {
+      toast.error('Please enter a valid URL')
+      return
+    }
+
+    setIsUpdatingUrl(true)
+    try {
+      const { error } = await supabase.functions.invoke('update-adb-url', {
+        body: { serverUrl: newAdbUrl.trim() }
+      })
+
+      if (error) throw error
+
+      setAdbServerUrl(newAdbUrl.trim())
+      setLastUpdated(new Date().toISOString())
+      toast.success('ADB server URL updated!')
+    } catch (err: any) {
+      toast.error(`Failed to update URL: ${err.message}`)
+    } finally {
+      setIsUpdatingUrl(false)
+    }
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
+  }
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,6 +136,57 @@ export const DeviceConnection = () => {
 
   return (
     <div className="space-y-6">
+      {/* ADB Server URL Panel */}
+      <Card className="p-4 border-gaming-border bg-gaming-card">
+        <div className="flex items-center gap-2 mb-3">
+          <Server className="w-5 h-5 text-neon-blue" />
+          <h3 className="font-semibold text-glow">ADB Server URL</h3>
+        </div>
+        
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Input
+              value={newAdbUrl}
+              onChange={(e) => setNewAdbUrl(e.target.value)}
+              placeholder="https://your-ngrok-url.ngrok-free.app"
+              className="bg-gaming-card border-gaming-border flex-1"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => copyToClipboard(adbServerUrl)}
+              className="h-10 w-10"
+              title="Copy URL"
+            >
+              <Copy className="w-4 h-4" />
+            </Button>
+            <Button
+              onClick={handleUpdateAdbUrl}
+              disabled={isUpdatingUrl || newAdbUrl === adbServerUrl}
+              className="bg-neon-blue hover:bg-neon-blue/80"
+            >
+              {isUpdatingUrl ? 'Updating...' : 'Update URL'}
+            </Button>
+          </div>
+          
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {adbServerUrl ? (
+                <span className="flex items-center gap-1">
+                  <Check className="w-3 h-3 text-neon-green" />
+                  Active: {adbServerUrl}
+                </span>
+              ) : (
+                'No URL configured'
+              )}
+            </span>
+            {lastUpdated && (
+              <span>Updated: {new Date(lastUpdated).toLocaleString()}</span>
+            )}
+          </div>
+        </div>
+      </Card>
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Smartphone className="w-6 h-6 text-neon-purple" />
