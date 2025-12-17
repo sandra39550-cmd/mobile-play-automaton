@@ -10,14 +10,6 @@ import { useDeviceAutomation } from '@/hooks/useDeviceAutomation'
 import { supabase } from '@/integrations/supabase/client'
 import { toast } from 'sonner'
 
-type EndpointTestStatus = 'idle' | 'ok' | 'fail'
-
-type AdbEndpointStatus = {
-  devices: EndpointTestStatus
-  health: EndpointTestStatus
-  scanApps: EndpointTestStatus
-}
-
 export const DeviceConnection = () => {
   const { devices, connectDevice, deleteDevice, isLoading } = useDeviceAutomation()
   const [showConnectionForm, setShowConnectionForm] = useState(false)
@@ -25,12 +17,6 @@ export const DeviceConnection = () => {
   const [newAdbUrl, setNewAdbUrl] = useState('')
   const [isUpdatingUrl, setIsUpdatingUrl] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
-  const [isTestingAdb, setIsTestingAdb] = useState(false)
-  const [endpointStatus, setEndpointStatus] = useState<AdbEndpointStatus>({
-    devices: 'idle',
-    health: 'idle',
-    scanApps: 'idle',
-  })
   const [formData, setFormData] = useState({
     name: '',
     deviceId: '',
@@ -86,63 +72,6 @@ export const DeviceConnection = () => {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
     toast.success('Copied to clipboard')
-  }
-
-  const normalizeUrl = (url: string) => (url.startsWith('http') ? url : `https://${url}`)
-
-  const testEndpoint = async (url: string) => {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        // Helps bypass ngrok free-plan interstitial
-        'ngrok-skip-browser-warning': 'true',
-      },
-    })
-
-    return res.ok
-  }
-
-  const handleTestAdbServer = async () => {
-    if (!adbServerUrl) {
-      toast.error('No ADB server URL configured')
-      return
-    }
-
-    const baseUrl = normalizeUrl(adbServerUrl).replace(/\/$/, '')
-    const deviceSerial = devices[0]?.device_id
-
-    setIsTestingAdb(true)
-    setEndpointStatus({ devices: 'idle', health: 'idle', scanApps: 'idle' })
-
-    try {
-      const [healthOk, devicesOk, scanOk] = await Promise.all([
-        testEndpoint(`${baseUrl}/health`),
-        testEndpoint(`${baseUrl}/devices`),
-        testEndpoint(
-          deviceSerial
-            ? `${baseUrl}/scan-apps?deviceId=${encodeURIComponent(deviceSerial)}&category=games`
-            : `${baseUrl}/scan-apps`
-        ),
-      ])
-
-      setEndpointStatus({
-        health: healthOk ? 'ok' : 'fail',
-        devices: devicesOk ? 'ok' : 'fail',
-        scanApps: scanOk ? 'ok' : 'fail',
-      })
-
-      if (!scanOk) {
-        toast.error('ADB server missing /scan-apps (404)')
-      } else {
-        toast.success('ADB server endpoints look reachable')
-      }
-    } catch (e: any) {
-      toast.error(e?.message ? `ADB test failed: ${e.message}` : 'ADB test failed')
-      setEndpointStatus({ devices: 'fail', health: 'fail', scanApps: 'fail' })
-    } finally {
-      setIsTestingAdb(false)
-    }
   }
 
   const handleConnect = async (e: React.FormEvent) => {
@@ -215,54 +144,32 @@ export const DeviceConnection = () => {
         </div>
         
         <div className="space-y-3">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="flex items-center gap-2">
             <Input
               value={newAdbUrl}
               onChange={(e) => setNewAdbUrl(e.target.value)}
               placeholder="https://your-ngrok-url.ngrok-free.app"
               className="bg-gaming-card border-gaming-border flex-1"
             />
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => window.open(normalizeUrl(adbServerUrl), '_blank', 'noopener,noreferrer')}
-                className="h-10 w-10"
-                title="Open URL"
-                disabled={!adbServerUrl}
-              >
-                <ExternalLink className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => copyToClipboard(adbServerUrl)}
-                className="h-10 w-10"
-                title="Copy URL"
-                disabled={!adbServerUrl}
-              >
-                <Copy className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleTestAdbServer}
-                disabled={isTestingAdb || !adbServerUrl}
-                className="border-gaming-border"
-              >
-                {isTestingAdb ? 'Testing…' : 'Test'}
-              </Button>
-              <Button
-                onClick={handleUpdateAdbUrl}
-                disabled={isUpdatingUrl || newAdbUrl === adbServerUrl}
-                className="bg-neon-blue hover:bg-neon-blue/80"
-              >
-                {isUpdatingUrl ? 'Updating…' : 'Update URL'}
-              </Button>
-            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => copyToClipboard(adbServerUrl)}
+              className="h-10 w-10"
+              title="Copy URL"
+            >
+              <Copy className="w-4 h-4" />
+            </Button>
+            <Button
+              onClick={handleUpdateAdbUrl}
+              disabled={isUpdatingUrl || newAdbUrl === adbServerUrl}
+              className="bg-neon-blue hover:bg-neon-blue/80"
+            >
+              {isUpdatingUrl ? 'Updating...' : 'Update URL'}
+            </Button>
           </div>
           
-          <div className="flex flex-col gap-2 text-xs text-muted-foreground md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
               {adbServerUrl ? (
                 <span className="flex items-center gap-1">
@@ -273,19 +180,9 @@ export const DeviceConnection = () => {
                 'No URL configured'
               )}
             </span>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="border-gaming-border">
-                /devices: {endpointStatus.devices}
-              </Badge>
-              <Badge variant="outline" className="border-gaming-border">
-                /health: {endpointStatus.health}
-              </Badge>
-              <Badge variant="outline" className="border-gaming-border">
-                /scan-apps: {endpointStatus.scanApps}
-              </Badge>
-              {lastUpdated && <span>Updated: {new Date(lastUpdated).toLocaleString()}</span>}
-            </div>
+            {lastUpdated && (
+              <span>Updated: {new Date(lastUpdated).toLocaleString()}</span>
+            )}
           </div>
         </div>
       </Card>
