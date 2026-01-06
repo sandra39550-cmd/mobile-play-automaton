@@ -695,6 +695,18 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
       if (!fallbackRes.ok) {
         const errorText = await fallbackRes.text()
         console.error(`❌ Failed to scan games (fallback ${fallbackRes.status}):`, errorText.substring(0, 500))
+
+        if (fallbackRes.status === 404 && /Cannot\s+GET\s+\/scan-apps/i.test(errorText)) {
+          throw new Error(
+            `ADB server at ${baseUrl} does not expose GET /scan-apps (returned 404). ` +
+              `This usually means ngrok is pointing to the wrong service or you’re running an older ADB server. ` +
+              `Start the server from this repo and re-tunnel port 3000:\n` +
+              `1) cd adb-server && node server.js\n` +
+              `2) ngrok http 3000\n` +
+              `Then refresh and try Scan again.`
+          )
+        }
+
         throw new Error(`ADB server returned ${fallbackRes.status}: ${errorText.substring(0, 200)}`)
       }
 
@@ -722,6 +734,14 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`❌ Failed to scan games (${response.status}):`, errorText.substring(0, 500))
+
+      if (response.status === 404 && /Cannot\s+(GET|POST)\s+\/scan-apps/i.test(errorText)) {
+        throw new Error(
+          `ADB server at ${baseUrl} does not expose /scan-apps (returned 404). ` +
+            `Please ensure you are running the included ADB server (adb-server/server.js) and that ngrok is tunneling the same port (3000).`
+        )
+      }
+
       throw new Error(`ADB server returned ${response.status}: ${errorText.substring(0, 200)}`)
     }
     
