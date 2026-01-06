@@ -90,6 +90,8 @@ serve(async (req) => {
         return await scanDeviceGames(supabaseClient, payload.deviceId)
       case 'check_device_status':
         return await checkDeviceStatus(supabaseClient, payload.deviceId)
+      case 'update_device':
+        return await updateDevice(supabaseClient, payload)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -826,4 +828,58 @@ async function startGameAutomation(session: any, device: any) {
   } catch (error) {
     console.error('Error in game automation:', error)
   }
+}
+
+// Update device properties (name, etc.)
+async function updateDevice(supabaseClient: any, payload: { deviceId: string; updates: Record<string, any> }) {
+  console.log('Updating device:', payload)
+  
+  const { deviceId, updates } = payload
+  
+  if (!deviceId) {
+    return new Response(JSON.stringify({ error: 'Device ID is required' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+  
+  // Only allow certain fields to be updated
+  const allowedFields = ['name', 'adb_host', 'adb_port']
+  const sanitizedUpdates: Record<string, any> = {}
+  
+  for (const key of Object.keys(updates)) {
+    if (allowedFields.includes(key)) {
+      sanitizedUpdates[key] = updates[key]
+    }
+  }
+  
+  if (Object.keys(sanitizedUpdates).length === 0) {
+    return new Response(JSON.stringify({ error: 'No valid fields to update' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+  
+  sanitizedUpdates.updated_at = new Date().toISOString()
+  
+  const { data, error } = await supabaseClient
+    .from('devices')
+    .update(sanitizedUpdates)
+    .eq('id', deviceId)
+    .select()
+    .single()
+  
+  if (error) {
+    console.error('Failed to update device:', error)
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+  
+  console.log('Device updated successfully:', data)
+  return new Response(JSON.stringify({ success: true, device: data }), {
+    status: 200,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  })
 }
