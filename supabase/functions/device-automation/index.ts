@@ -82,16 +82,52 @@ const GAME_PATTERNS = [
 ]
 
 function isSkippedPackage(pkg: string): boolean {
-  return (
-    pkg.startsWith('com.android.') ||
-    pkg.startsWith('com.google.android.') ||
-    pkg.startsWith('com.samsung.') ||
-    pkg.startsWith('com.sec.') ||
-    pkg.startsWith('com.microsoft.office') ||
-    pkg.startsWith('com.facebook.') ||
-    pkg === 'com.whatsapp' ||
-    pkg === 'android'
-  )
+  // Skip system packages and common non-game apps
+  const skipPrefixes = [
+    'com.android.',
+    'com.google.android.',
+    'com.samsung.',
+    'com.sec.',
+    'com.microsoft.',
+    'com.facebook.',
+    'com.monotype.',        // Fonts
+    'com.dsi.ant.',         // ANT+ services
+    'com.gd.mobicore.',     // Security services
+    'com.osp.',             // Samsung services
+    'org.simalliance.',     // SIM services
+    'com.cleanmaster.',     // Cleaner apps
+    'android.',
+  ]
+  
+  const skipExact = [
+    'com.whatsapp',
+    'android',
+    'com.wsomacp',
+    'com.wssnps',
+    'com.policydm',
+    'com.wssyncmldm',
+  ]
+  
+  // Skip if matches any prefix
+  if (skipPrefixes.some(prefix => pkg.startsWith(prefix))) return true
+  
+  // Skip if exact match
+  if (skipExact.includes(pkg)) return true
+  
+  // Skip packages that look like system services (contain 'service', 'provider', 'signin', etc.)
+  const systemPatterns = [
+    /\.service$/i,
+    /\.provider$/i,
+    /\.signin$/i,
+    /\.socket$/i,
+    /\.server$/i,
+    /\.sdk$/i,
+    /\.pa$/i,
+    /font\./i,
+  ]
+  if (systemPatterns.some(pattern => pattern.test(pkg))) return true
+  
+  return false
 }
 
 function filterGamePackages(packages: string[]): { packageName: string; name: string }[] {
