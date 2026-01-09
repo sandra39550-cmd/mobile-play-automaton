@@ -81,35 +81,45 @@ const GAME_PATTERNS = [
   /jump/i,
 ]
 
+function isSkippedPackage(pkg: string): boolean {
+  return (
+    pkg.startsWith('com.android.') ||
+    pkg.startsWith('com.google.android.') ||
+    pkg.startsWith('com.samsung.') ||
+    pkg.startsWith('com.sec.') ||
+    pkg.startsWith('com.microsoft.office') ||
+    pkg.startsWith('com.facebook.') ||
+    pkg === 'com.whatsapp' ||
+    pkg === 'android'
+  )
+}
+
 function filterGamePackages(packages: string[]): { packageName: string; name: string }[] {
   const games: { packageName: string; name: string }[] = []
-  
+
   for (const pkg of packages) {
     // Skip system/common non-game packages
-    if (pkg.startsWith('com.android.') || 
-        pkg.startsWith('com.google.android.') ||
-        pkg.startsWith('com.samsung.') ||
-        pkg.startsWith('com.sec.') ||
-        pkg.startsWith('com.microsoft.office') ||
-        pkg.startsWith('com.facebook.') ||
-        pkg === 'com.whatsapp' ||
-        pkg === 'android') {
-      continue
-    }
-    
+    if (isSkippedPackage(pkg)) continue
+
     // Check if it's a known game
-    const isKnownGame = KNOWN_GAME_PACKAGES.some(known => pkg.startsWith(known))
-    const matchesPattern = GAME_PATTERNS.some(pattern => pattern.test(pkg))
-    
+    const isKnownGame = KNOWN_GAME_PACKAGES.some((known) => pkg.startsWith(known))
+    const matchesPattern = GAME_PATTERNS.some((pattern) => pattern.test(pkg))
+
     if (isKnownGame || matchesPattern) {
       games.push({
         packageName: pkg,
-        name: formatPackageName(pkg)
+        name: formatPackageName(pkg),
       })
     }
   }
-  
+
   return games
+}
+
+function packagesToApps(packages: string[]): { packageName: string; name: string }[] {
+  return packages
+    .filter((pkg) => !isSkippedPackage(pkg))
+    .map((pkg) => ({ packageName: pkg, name: formatPackageName(pkg) }))
 }
 
 function formatPackageName(pkg: string): string {
@@ -817,14 +827,19 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
 
       // Handle both response formats: { apps: [...] } or { devices: [{ packages: [...] }] }
       let apps = result.apps || []
-      
+
       // If no apps but devices array exists, try to extract packages from it
       if (!apps.length && result.devices && Array.isArray(result.devices)) {
         console.log('📦 Parsing devices/packages format...')
         const devicePackages = result.devices.flatMap((d: any) => d.packages || [])
-        // Filter for known game packages
-        apps = filterGamePackages(devicePackages)
-        console.log(`🎮 Filtered ${apps.length} games from ${devicePackages.length} packages`)
+
+        // If the ADB server doesn't classify games, fall back to listing non-system apps
+        const filteredGames = filterGamePackages(devicePackages)
+        apps = filteredGames.length ? filteredGames : packagesToApps(devicePackages)
+
+        console.log(
+          `🎮 Parsed ${apps.length} apps from ${devicePackages.length} packages (filtered=${filteredGames.length})`
+        )
       }
       
       if (!apps.length) {
@@ -863,6 +878,33 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
     console.log(`🎮 Apps array:`, JSON.stringify(result.apps))
     console.log(`📊 Number of apps found: ${(result.apps || []).length}`)
     
+    // If the server returned a different response format, try to parse it too
+    if ((!result.apps || result.apps.length === 0) && result.devices && Array.isArray(result.devices)) {
+      console.log('📦 POST response had no apps; trying devices/packages format...')
+      const devicePackages = result.devices.flatMap((d: any) => d.packages || [])
+      const filteredGames = filterGamePackages(devicePackages)
+      const apps = filteredGames.length ? filteredGames : packagesToApps(devicePackages)
+
+      if (!apps.length) {
+        console.warn('⚠️ No games/apps found after parsing response')
+        return []
+      }
+
+      const mappedGames = apps.map((app: any) => ({
+        name: app.name || formatPackageName(app.packageName || app),
+        icon: '🎮',
+        category: 'Game',
+        packageName: app.packageName || app,
+        isInstalled: true,
+      }))
+
+      console.log(
+        `✅ Successfully scanned ${mappedGames.length} games/apps (POST devices/packages):`,
+        mappedGames.map((g: any) => g.name).join(', ')
+      )
+      return mappedGames
+    }
+
     if (!result.apps || result.apps.length === 0) {
       console.warn('⚠️ ADB server returned empty apps array')
       console.log('Device might not have any games installed')
