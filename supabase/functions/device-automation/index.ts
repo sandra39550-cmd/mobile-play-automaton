@@ -386,12 +386,16 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
 
   if (error) throw error
 
-  // Start the actual bot automation
-  startGameAutomation(session, device)
+  // Launch the game on the device
+  const launchResult = await launchGameOnDevice(supabaseClient, device, sessionData.packageName)
+  
+  console.log('Game launch result:', launchResult)
 
   return new Response(JSON.stringify({ 
     success: true, 
-    session: session
+    session: session,
+    launched: launchResult.success,
+    launchMessage: launchResult.message
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
@@ -964,58 +968,49 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
   }
 }
 
-async function startGameAutomation(session: any, device: any) {
-  console.log('Starting game automation for:', session.game_name)
+// Launch a game on the device via ADB
+async function launchGameOnDevice(supabaseClient: any, device: any, packageName: string): Promise<{ success: boolean; message: string }> {
+  console.log(`🎮 Launching game ${packageName} on device ${device.name} (${device.device_id})`)
   
   try {
-    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    const adbServerUrl = await getAdbServerUrl(supabaseClient)
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     
-    // Define automation actions for the game
-    const actions = [
-      { type: 'open_app', packageName: session.package_name },
-      { type: 'screenshot' },
-      { type: 'tap', coordinates: { x: device.screen_width / 2, y: device.screen_height / 2 } },
-      { type: 'swipe', swipeDirection: 'up', duration: 300 }
-    ]
-    
-    // Execute actions on the real device
-    for (const action of actions) {
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      console.log('Executing automated action:', action.type)
-      
-      if (adbServerUrl) {
-        const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
-        const actionUrl = `${baseUrl}/action`
-        
-        try {
-          const actionPayload = {
-            deviceId: device.device_id,
-            ...action
-          }
-          
-          const response = await fetch(actionUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(actionPayload)
-          })
-          
-          if (response.ok) {
-            const result = await response.json()
-            console.log(`Action ${action.type} executed:`, result)
-          } else {
-            console.error(`Failed to execute ${action.type}:`, await response.text())
-          }
-        } catch (error) {
-          console.error(`Error executing ${action.type}:`, error)
-        }
-      } else {
-        console.log(`Simulated action: ${action.type}`)
-      }
+    // Send open_app action to ADB server
+    const actionPayload = {
+      type: 'open_app',
+      packageName: packageName,
+      deviceId: device.device_id
     }
     
-    console.log('Game automation sequence completed for:', session.game_name)
+    console.log('📱 Sending launch command to ADB server:', actionPayload)
+    
+    const response = await fetch(`${baseUrl}/action`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        ...ngrokBypassHeaders
+      },
+      body: JSON.stringify(actionPayload),
+      signal: AbortSignal.timeout(15000)
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('❌ Failed to launch game:', errorText)
+      return { success: false, message: `Failed to launch: ${errorText}` }
+    }
+    
+    const result = await response.json()
+    console.log('✅ Game launched successfully:', result)
+    
+    return { 
+      success: true, 
+      message: `${packageName} launched on ${device.name}` 
+    }
   } catch (error) {
-    console.error('Error in game automation:', error)
+    console.error('❌ Error launching game:', error)
+    return { success: false, message: error.message }
   }
 }
 
