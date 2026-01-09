@@ -27,6 +27,106 @@ interface GameBot {
   actions: DeviceAction[]
 }
 
+// Known game package patterns and specific games
+const KNOWN_GAME_PACKAGES = [
+  // Match games
+  'com.king.candycrushsaga',
+  'com.king.candycrushsodasaga',
+  'com.king.farmheroessaga',
+  'com.supercell.clashofclans',
+  'com.supercell.clashroyale',
+  'com.supercell.brawlstars',
+  'com.rovio.angrybirds',
+  'com.igg.castleclash',
+  'com.gameloft',
+  'com.ea.game',
+  'com.zynga',
+  'com.outfit7',
+  'com.halfbrick',
+  'com.mojang.minecraftpe',
+  'com.kiloo.subwaysurf',
+  'com.nekki',
+  'com.fingersoft.hillclimb',
+  'com.dts.freefireth',
+  'com.tencent.ig',
+  'com.pubg',
+  'com.activision.callofduty',
+  'com.roblox.client',
+]
+
+// Package name patterns that indicate games
+const GAME_PATTERNS = [
+  /\.game\./i,
+  /game$/i,
+  /games\./i,
+  /\.play\./i,
+  /puzzle/i,
+  /arcade/i,
+  /adventure/i,
+  /racing/i,
+  /shooter/i,
+  /rpg/i,
+  /casino/i,
+  /slots/i,
+  /candy/i,
+  /crush/i,
+  /clash/i,
+  /craft/i,
+  /ninja/i,
+  /zombie/i,
+  /dragon/i,
+  /hero/i,
+  /saga/i,
+  /run/i,
+  /jump/i,
+]
+
+function filterGamePackages(packages: string[]): { packageName: string; name: string }[] {
+  const games: { packageName: string; name: string }[] = []
+  
+  for (const pkg of packages) {
+    // Skip system/common non-game packages
+    if (pkg.startsWith('com.android.') || 
+        pkg.startsWith('com.google.android.') ||
+        pkg.startsWith('com.samsung.') ||
+        pkg.startsWith('com.sec.') ||
+        pkg.startsWith('com.microsoft.office') ||
+        pkg.startsWith('com.facebook.') ||
+        pkg === 'com.whatsapp' ||
+        pkg === 'android') {
+      continue
+    }
+    
+    // Check if it's a known game
+    const isKnownGame = KNOWN_GAME_PACKAGES.some(known => pkg.startsWith(known))
+    const matchesPattern = GAME_PATTERNS.some(pattern => pattern.test(pkg))
+    
+    if (isKnownGame || matchesPattern) {
+      games.push({
+        packageName: pkg,
+        name: formatPackageName(pkg)
+      })
+    }
+  }
+  
+  return games
+}
+
+function formatPackageName(pkg: string): string {
+  // Extract last part of package name and format it
+  const parts = pkg.split('.')
+  const lastPart = parts[parts.length - 1]
+  
+  // Convert camelCase/lowercase to Title Case with spaces
+  return lastPart
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/[_-]/g, ' ')
+    .trim()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
 // Get ADB server URL from database (auto-detected) or fallback to env var
 async function getAdbServerUrl(supabaseClient: any): Promise<string> {
   try {
@@ -715,17 +815,28 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
       const result = await fallbackRes.json()
       console.log(`📦 Raw ADB server response (fallback):`, JSON.stringify(result))
 
-      const apps = result.apps || []
+      // Handle both response formats: { apps: [...] } or { devices: [{ packages: [...] }] }
+      let apps = result.apps || []
+      
+      // If no apps but devices array exists, try to extract packages from it
+      if (!apps.length && result.devices && Array.isArray(result.devices)) {
+        console.log('📦 Parsing devices/packages format...')
+        const devicePackages = result.devices.flatMap((d: any) => d.packages || [])
+        // Filter for known game packages
+        apps = filterGamePackages(devicePackages)
+        console.log(`🎮 Filtered ${apps.length} games from ${devicePackages.length} packages`)
+      }
+      
       if (!apps.length) {
-        console.warn('⚠️ ADB server returned empty apps array (fallback)')
+        console.warn('⚠️ No games found after parsing response')
         return []
       }
 
       const mappedGames = apps.map((app: any) => ({
-        name: app.name || app.packageName,
+        name: app.name || formatPackageName(app.packageName || app),
         icon: app.icon || '🎮',
         category: app.category || 'Game',
-        packageName: app.packageName,
+        packageName: app.packageName || app,
         isInstalled: true,
       }))
 
