@@ -2,8 +2,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, Square, Settings, TrendingUp } from "lucide-react";
+import { Play, Pause, Square, Settings, TrendingUp, Smartphone, Rocket } from "lucide-react";
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface BotCardProps {
   game: {
@@ -18,12 +20,14 @@ interface BotCardProps {
     hourlyRate: number;
     deviceId?: string;
     packageName?: string;
+    sessionId?: string;
   };
   onStatusChange: (id: string, status: "active" | "paused" | "stopped") => void;
 }
 
 export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -40,6 +44,46 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
       case "paused": return "Paused";
       case "stopped": return "Stopped";
       default: return "Unknown";
+    }
+  };
+
+  // Launch game directly on device
+  const handleLaunchOnDevice = async () => {
+    if (!game.packageName || !game.deviceId) {
+      toast.error("Missing game or device information");
+      return;
+    }
+
+    setIsLaunching(true);
+    toast.loading(`🚀 Launching ${game.name} on device...`, { id: 'launch-game' });
+
+    try {
+      const { data, error } = await supabase.functions.invoke('device-automation', {
+        body: {
+          action: 'start_bot_session',
+          payload: {
+            deviceId: game.deviceId,
+            gameName: game.name,
+            packageName: game.packageName,
+            config: {},
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.success && data.launched) {
+        toast.success(`🎮 ${game.name} launched on device!`, { id: 'launch-game', duration: 5000 });
+      } else if (data.success) {
+        toast.warning(`⚠️ Session active but launch failed: ${data.launchMessage || 'Check ADB server'}`, { id: 'launch-game', duration: 8000 });
+      } else {
+        toast.error(`Failed: ${data.error || 'Unknown error'}`, { id: 'launch-game' });
+      }
+    } catch (error) {
+      console.error('Launch error:', error);
+      toast.error(`Launch failed: ${error}`, { id: 'launch-game' });
+    } finally {
+      setIsLaunching(false);
     }
   };
 
@@ -93,44 +137,60 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
             </div>
           </div>
 
-          <div className="flex gap-2 pt-4">
-            {game.status !== "active" && (
+          <div className="flex flex-col gap-2 pt-4">
+            {/* Launch on Device button - always visible for active games with device */}
+            {game.status === "active" && game.deviceId && game.packageName && (
               <Button
                 variant="default"
                 size="sm"
-                onClick={() => onStatusChange(game.id, "active")}
-                className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg border-0 font-bold"
+                onClick={handleLaunchOnDevice}
+                disabled={isLaunching}
+                className="w-full bg-neon-purple hover:bg-neon-purple/80 text-white border-0 font-bold"
               >
-                <Play className="w-4 h-4 mr-1" />
-                Play Now
+                <Rocket className={`w-4 h-4 mr-2 ${isLaunching ? 'animate-pulse' : ''}`} />
+                {isLaunching ? 'Launching...' : 'Launch on Device'}
               </Button>
             )}
             
-            {game.status === "active" && (
+            <div className="flex gap-2">
+              {game.status !== "active" && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => onStatusChange(game.id, "active")}
+                  className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg border-0 font-bold"
+                >
+                  <Play className="w-4 h-4 mr-1" />
+                  Play Now
+                </Button>
+              )}
+              
+              {game.status === "active" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onStatusChange(game.id, "paused")}
+                  className="flex-1"
+                >
+                  <Pause className="w-4 h-4 mr-1" />
+                  Pause
+                </Button>
+              )}
+              
               <Button
-                variant="secondary"
+                variant="destructive"
                 size="sm"
-                onClick={() => onStatusChange(game.id, "paused")}
+                onClick={() => onStatusChange(game.id, "stopped")}
                 className="flex-1"
               >
-                <Pause className="w-4 h-4 mr-1" />
-                Pause
+                <Square className="w-4 h-4 mr-1" />
+                Stop
               </Button>
-            )}
-            
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => onStatusChange(game.id, "stopped")}
-              className="flex-1"
-            >
-              <Square className="w-4 h-4 mr-1" />
-              Stop
-            </Button>
-            
-            <Button variant="outline" size="sm">
-              <Settings className="w-4 h-4" />
-            </Button>
+              
+              <Button variant="outline" size="sm">
+                <Settings className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
