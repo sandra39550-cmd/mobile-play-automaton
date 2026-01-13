@@ -170,16 +170,22 @@ export const useDeviceAutomation = () => {
       if (error) throw error
 
       if (data.success) {
-        toast.success(`Bot started for ${sessionData.gameName}`)
+        // Check if game was actually launched on device
+        if (data.launched) {
+          toast.success(`🎮 ${sessionData.gameName} launched on device!`, { duration: 5000 })
+        } else {
+          // Session created but game didn't launch
+          toast.warning(`⚠️ Session created but game didn't launch: ${data.launchMessage || 'Unknown error'}`, { duration: 8000 })
+        }
         await loadSessions()
-        return data.session
+        return { session: data.session, launched: data.launched, launchMessage: data.launchMessage }
       } else {
-        toast.error('Failed to start bot session')
+        toast.error(`Failed to start bot session: ${data.error || 'Unknown error'}`)
         return null
       }
     } catch (error) {
       console.error('Error starting bot session:', error)
-      toast.error('Failed to start bot session')
+      toast.error(`Failed to start bot session: ${error}`)
       return null
     } finally {
       setIsLoading(false)
