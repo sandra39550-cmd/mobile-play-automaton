@@ -354,28 +354,46 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
 async function startBotSession(supabaseClient: any, userId: string, sessionData: any) {
   console.log('Starting bot session:', sessionData)
   
-  // Verify device exists and is online (no user_id check since auth is disabled)
-  const { data: device, error: deviceError } = await supabaseClient
+  // Verify device exists and is online - try both UUID 'id' and hardware 'device_id'
+  let device = null
+  let deviceError = null
+  
+  // First try by UUID id
+  const { data: deviceById, error: errorById } = await supabaseClient
     .from('devices')
     .select('*')
     .eq('id', sessionData.deviceId)
-    .single()
+    .maybeSingle()
+  
+  if (deviceById) {
+    device = deviceById
+  } else {
+    // Fallback: try by hardware device_id
+    const { data: deviceByHwId, error: errorByHwId } = await supabaseClient
+      .from('devices')
+      .select('*')
+      .eq('device_id', sessionData.deviceId)
+      .maybeSingle()
+    
+    device = deviceByHwId
+    deviceError = errorByHwId
+  }
 
-  if (deviceError || !device) {
+  if (!device) {
     console.error('Device lookup error:', deviceError)
-    throw new Error('Device not found or offline')
+    throw new Error(`Device not found: ${sessionData.deviceId}`)
   }
 
   if (device.status !== 'online') {
     throw new Error(`Device ${device.name} is ${device.status}`)
   }
 
-  // Create bot session
+  // Create bot session using the database UUID (device.id), not the hardware ID
   const { data: session, error } = await supabaseClient
     .from('bot_sessions')
     .insert({
       user_id: userId,
-      device_id: sessionData.deviceId,
+      device_id: device.id,  // Use database UUID, not hardware device_id
       game_name: sessionData.gameName,
       package_name: sessionData.packageName,
       status: 'running',
@@ -976,6 +994,29 @@ async function launchGameOnDevice(supabaseClient: any, device: any, packageName:
     const adbServerUrl = await getAdbServerUrl(supabaseClient)
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     
+    // First verify ADB server is reachable
+    console.log('🔍 Checking ADB server health at:', baseUrl)
+    
+    try {
+      const healthResponse = await fetch(`${baseUrl}/health`, {
+        method: 'GET',
+        headers: { 
+          ...ngrokBypassHeaders,
+          'User-Agent': 'Lovable-Bot-Automation/1.0'
+        },
+        signal: AbortSignal.timeout(5000)
+      })
+      
+      if (!healthResponse.ok) {
+        console.error('❌ ADB server health check failed:', healthResponse.status)
+        return { success: false, message: 'ADB server is not responding. Please check if it\'s running.' }
+      }
+      console.log('✅ ADB server is healthy')
+    } catch (healthError) {
+      console.error('❌ Cannot reach ADB server:', healthError.message)
+      return { success: false, message: `Cannot reach ADB server at ${baseUrl}. Is ngrok running?` }
+    }
+    
     // Send open_app action to ADB server
     const actionPayload = {
       type: 'open_app',
@@ -984,21 +1025,25 @@ async function launchGameOnDevice(supabaseClient: any, device: any, packageName:
     }
     
     console.log('📱 Sending launch command to ADB server:', actionPayload)
+    console.log('📍 POST URL:', `${baseUrl}/action`)
     
     const response = await fetch(`${baseUrl}/action`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        ...ngrokBypassHeaders
+        ...ngrokBypassHeaders,
+        'User-Agent': 'Lovable-Bot-Automation/1.0'
       },
       body: JSON.stringify(actionPayload),
       signal: AbortSignal.timeout(15000)
     })
     
+    console.log('📬 Response status:', response.status)
+    
     if (!response.ok) {
       const errorText = await response.text()
       console.error('❌ Failed to launch game:', errorText)
-      return { success: false, message: `Failed to launch: ${errorText}` }
+      return { success: false, message: `Failed to launch (${response.status}): ${errorText.substring(0, 200)}` }
     }
     
     const result = await response.json()
