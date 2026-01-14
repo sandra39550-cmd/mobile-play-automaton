@@ -138,8 +138,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
           </div>
 
           <div className="flex flex-col gap-2 pt-4">
-            {/* Launch on Device button - always visible for active games with device */}
-            {game.status === "active" && game.deviceId && game.packageName && (
+            {/* Launch on Device button - visible for any game with device info */}
+            {game.deviceId && game.packageName && (
               <Button
                 variant="default"
                 size="sm"
