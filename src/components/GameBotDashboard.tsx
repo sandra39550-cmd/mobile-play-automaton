@@ -6,6 +6,8 @@ import { QuickStartGuide } from "./QuickStartGuide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Plus, Search, Filter, Bot, Smartphone, Play, RefreshCw, Scan } from "lucide-react";
@@ -14,7 +16,7 @@ import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
+import { supabase } from "@/integrations/supabase/client";
 export const GameBotDashboard = () => {
   const { devices, sessions, checkAllDeviceStatus, loadDevices } = useDeviceAutomation();
   const { games, deviceGames, isLoading, handleGameStatusChange, addGameSession, getAvailableGamesForDevice, scanGamesOnDevice, getStats } = useGameManagement();
@@ -26,6 +28,29 @@ export const GameBotDashboard = () => {
   const [selectedGame, setSelectedGame] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+
+  const [currentAdbUrl, setCurrentAdbUrl] = useState<string | null>(null);
+  const [adbUrlInput, setAdbUrlInput] = useState("");
+  const [isSavingAdbUrl, setIsSavingAdbUrl] = useState(false);
+
+  const loadCurrentAdbUrl = async () => {
+    const { data, error } = await supabase
+      .from('adb_server_config')
+      .select('server_url, last_updated, created_at')
+      .eq('is_active', true)
+      .order('last_updated', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && data?.server_url) {
+      setCurrentAdbUrl(data.server_url);
+      setAdbUrlInput((prev) => prev || data.server_url);
+    }
+  };
+
+  useEffect(() => {
+    loadCurrentAdbUrl();
+  }, []);
 
   // Auto-scan when dialog opens if we have online devices
   useEffect(() => {
@@ -163,6 +188,103 @@ export const GameBotDashboard = () => {
           onConnectDevice={() => setCurrentTab("devices")}
           hasDevices={devices.length > 0}
         />
+
+        {/* ADB Server URL (fixes stale ngrok URL issues) */}
+        <Card className="p-4 border-gaming-border bg-gaming-card">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-glow">ADB Server URL</h2>
+                <p className="text-sm text-muted-foreground">
+                  If you see “ADB server not responding”, paste your current ngrok HTTPS URL here.
+                </p>
+              </div>
+              {currentAdbUrl ? (
+                <Badge variant="outline" className="text-neon-blue border-neon-blue">
+                  Active
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-yellow-500 border-yellow-500">
+                  Unknown
+                </Badge>
+              )}
+            </div>
+
+            {currentAdbUrl && (
+              <div className="text-xs text-muted-foreground break-all">
+                Current: <span className="font-mono">{currentAdbUrl}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2 items-end">
+              <div className="space-y-1">
+                <Label htmlFor="adbUrl">ngrok HTTPS URL</Label>
+                <Input
+                  id="adbUrl"
+                  value={adbUrlInput}
+                  onChange={(e) => setAdbUrlInput(e.target.value)}
+                  placeholder="https://xxxx.ngrok-free.app"
+                  className="bg-gaming-card border-gaming-border"
+                />
+              </div>
+
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (!adbUrlInput.trim()) {
+                    toast.error('Please paste your ngrok HTTPS URL');
+                    return;
+                  }
+                  const base = adbUrlInput.trim().replace(/\/+$/, '');
+                  toast.loading('Testing /health...', { id: 'adb-test' });
+                  try {
+                    const res = await fetch(`${base}/health`, { method: 'GET' });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    toast.success('Health check OK', { id: 'adb-test' });
+                  } catch (e: any) {
+                    toast.error(`Health check failed: ${e?.message || 'Unknown error'}`, { id: 'adb-test' });
+                  }
+                }}
+                className="h-12"
+              >
+                Test
+              </Button>
+
+              <Button
+                onClick={async () => {
+                  if (!adbUrlInput.trim()) {
+                    toast.error('Please paste your ngrok HTTPS URL');
+                    return;
+                  }
+
+                  const serverUrl = adbUrlInput.trim().replace(/\/+$/, '');
+
+                  setIsSavingAdbUrl(true);
+                  toast.loading('Updating ADB URL...', { id: 'adb-save' });
+                  try {
+                    const { data, error } = await supabase.functions.invoke('update-adb-url', {
+                      body: { serverUrl },
+                    });
+
+                    if (error) throw error;
+                    if (!data?.success) throw new Error(data?.error || 'Update failed');
+
+                    await loadCurrentAdbUrl();
+                    toast.success('ADB URL updated', { id: 'adb-save' });
+                  } catch (e: any) {
+                    toast.error(`Failed to update: ${e?.message || 'Unknown error'}`, { id: 'adb-save' });
+                  } finally {
+                    setIsSavingAdbUrl(false);
+                  }
+                }}
+                disabled={isSavingAdbUrl}
+                className="h-12 bg-neon-purple hover:bg-neon-purple/80"
+              >
+                {isSavingAdbUrl ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </Card>
 
         {/* Main Content */}
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
