@@ -166,7 +166,39 @@ app.post('/screenshot', async (req, res) => {
   }
 });
 
-// Scan installed apps (games)
+// Known game package patterns
+const GAME_PATTERNS = [
+  /\.game\./i, /game$/i, /games\./i, /\.play\./i,
+  /puzzle/i, /arcade/i, /adventure/i, /racing/i, /shooter/i, /rpg/i,
+  /casino/i, /slots/i, /candy/i, /crush/i, /clash/i, /craft/i,
+  /ninja/i, /zombie/i, /dragon/i, /hero/i, /saga/i, /run/i, /jump/i,
+  /tile/i, /match/i, /bubble/i, /ball/i, /bird/i, /fruit/i, /jewel/i,
+  /solitaire/i, /poker/i, /chess/i, /sudoku/i, /word/i, /trivia/i,
+  /tower/i, /defense/i, /war/i, /battle/i, /strike/i, /quest/i,
+  /farm/i, /city/i, /tycoon/i, /simulator/i, /racing/i, /drift/i,
+  /pool/i, /billiard/i, /snooker/i
+];
+
+const KNOWN_GAME_PACKAGES = [
+  'com.king.', 'com.supercell.', 'com.rovio.', 'com.gameloft.',
+  'com.ea.game', 'com.zynga.', 'com.outfit7.', 'com.halfbrick.',
+  'com.mojang.', 'com.kiloo.', 'com.nekki.', 'com.fingersoft.',
+  'com.dts.freefireth', 'com.tencent.ig', 'com.pubg.', 'com.activision.',
+  'com.roblox.', 'com.igg.', 'com.playrix.', 'com.miniclip.',
+  'com.nimblebit.', 'com.ketchapp.', 'com.voodoo.', 'com.yodo1.',
+  'com.azurgames.', 'com.crazylabs.', 'com.ludo.', 'me.pou.',
+  'com.bfriedsoftware.tilepark'  // Tile Park
+];
+
+function isGamePackage(pkg) {
+  // Check known game publishers
+  if (KNOWN_GAME_PACKAGES.some(known => pkg.startsWith(known))) return true;
+  // Check game patterns
+  if (GAME_PATTERNS.some(pattern => pattern.test(pkg))) return true;
+  return false;
+}
+
+// Scan installed apps (games only)
 async function handleScanApps(deviceId, category) {
   // List third-party packages (non-system apps)
   const { stdout } = await execPromise('adb shell pm list packages -3');
@@ -176,27 +208,30 @@ async function handleScanApps(deviceId, category) {
     .map((line) => line.replace('package:', '').trim())
     .filter((pkg) => pkg);
 
+  console.log(`Found ${packages.length} third-party packages, filtering for games...`);
+
   const apps = [];
   for (const pkg of packages) {
-    try {
-      // Best-effort query (not strictly required, but keeps behavior consistent)
-      await execPromise(`adb shell dumpsys package ${pkg} | grep -A 1 "applicationInfo"`);
+    // Only include games
+    if (!isGamePackage(pkg)) {
+      continue;
+    }
 
+    try {
       const name = pkg.split('.').pop().replace(/([A-Z])/g, ' $1').trim() || pkg;
 
       apps.push({
         name: name.charAt(0).toUpperCase() + name.slice(1),
         packageName: pkg,
-        category: category || 'Game',
+        category: 'Game',
         icon: '🎮',
       });
     } catch (err) {
-      // Skip apps that can't be queried
       console.log(`Skipping package: ${pkg}`);
     }
   }
 
-  console.log(`Found ${apps.length} apps`);
+  console.log(`Found ${apps.length} games after filtering`);
   return apps;
 }
 
