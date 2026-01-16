@@ -891,9 +891,9 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
         console.log('📦 Parsing devices/packages format...')
         const devicePackages = result.devices.flatMap((d: any) => d.packages || [])
 
-        // If the ADB server doesn't classify games, fall back to listing non-system apps
+      // Only show games - no fallback to all apps
         const filteredGames = filterGamePackages(devicePackages)
-        apps = filteredGames.length ? filteredGames : packagesToApps(devicePackages)
+        apps = filteredGames
 
         console.log(
           `🎮 Parsed ${apps.length} apps from ${devicePackages.length} packages (filtered=${filteredGames.length})`
@@ -941,7 +941,7 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
       console.log('📦 POST response had no apps; trying devices/packages format...')
       const devicePackages = result.devices.flatMap((d: any) => d.packages || [])
       const filteredGames = filterGamePackages(devicePackages)
-      const apps = filteredGames.length ? filteredGames : packagesToApps(devicePackages)
+      const apps = filteredGames  // Only show games - no fallback to all apps
 
       if (!apps.length) {
         console.warn('⚠️ No games/apps found after parsing response')
