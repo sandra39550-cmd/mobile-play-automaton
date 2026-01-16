@@ -166,36 +166,59 @@ app.post('/screenshot', async (req, res) => {
   }
 });
 
-// Known game package patterns
-const GAME_PATTERNS = [
-  /\.game\./i, /game$/i, /games\./i, /\.play\./i,
-  /puzzle/i, /arcade/i, /adventure/i, /racing/i, /shooter/i, /rpg/i,
-  /casino/i, /slots/i, /candy/i, /crush/i, /clash/i, /craft/i,
-  /ninja/i, /zombie/i, /dragon/i, /hero/i, /saga/i, /run/i, /jump/i,
-  /tile/i, /match/i, /bubble/i, /ball/i, /bird/i, /fruit/i, /jewel/i,
-  /solitaire/i, /poker/i, /chess/i, /sudoku/i, /word/i, /trivia/i,
-  /tower/i, /defense/i, /war/i, /battle/i, /strike/i, /quest/i,
-  /farm/i, /city/i, /tycoon/i, /simulator/i, /racing/i, /drift/i,
-  /pool/i, /billiard/i, /snooker/i
-];
-
+// Strict game detection - only matches actual games visible in launcher
 const KNOWN_GAME_PACKAGES = [
+  // Your specific games
+  'tilepark', 'poolbilliard', 'pool.billiard', 'billiard',
+  // Major game publishers
   'com.king.', 'com.supercell.', 'com.rovio.', 'com.gameloft.',
   'com.ea.game', 'com.zynga.', 'com.outfit7.', 'com.halfbrick.',
   'com.mojang.', 'com.kiloo.', 'com.nekki.', 'com.fingersoft.',
   'com.dts.freefireth', 'com.tencent.ig', 'com.pubg.', 'com.activision.',
   'com.roblox.', 'com.igg.', 'com.playrix.', 'com.miniclip.',
   'com.nimblebit.', 'com.ketchapp.', 'com.voodoo.', 'com.yodo1.',
-  'com.azurgames.', 'com.crazylabs.', 'com.ludo.', 'me.pou.',
-  'com.bfriedsoftware.tilepark'  // Tile Park
+  'com.azurgames.', 'com.crazylabs.', 'com.ludo.', 'me.pou.'
+];
+
+// Packages to explicitly exclude (system/utility apps that might match patterns)
+const EXCLUDED_PACKAGES = [
+  'com.android', 'com.google', 'com.samsung', 'com.sec.',
+  'com.microsoft', 'com.facebook.katana', 'com.whatsapp',
+  'com.instagram', 'com.twitter', 'com.snapchat',
+  'provider', 'service', 'settings', 'launcher', 'keyboard',
+  'chrome', 'browser', 'camera', 'gallery', 'phone', 'contacts',
+  'calendar', 'clock', 'calculator', 'weather', 'music', 'video',
+  'youtube', 'maps', 'drive', 'docs', 'sheets', 'slides',
+  'gmail', 'email', 'message', 'dialer'
 ];
 
 function isGamePackage(pkg) {
-  // Check known game publishers
-  if (KNOWN_GAME_PACKAGES.some(known => pkg.startsWith(known))) return true;
-  // Check game patterns
-  if (GAME_PATTERNS.some(pattern => pattern.test(pkg))) return true;
-  return false;
+  const lowerPkg = pkg.toLowerCase();
+  
+  // First, exclude known non-game packages
+  if (EXCLUDED_PACKAGES.some(ex => lowerPkg.includes(ex))) {
+    return false;
+  }
+  
+  // Check if it matches known game packages/patterns
+  if (KNOWN_GAME_PACKAGES.some(known => lowerPkg.includes(known.toLowerCase()))) {
+    return true;
+  }
+  
+  // Only match very specific game-related terms that are unlikely to be system apps
+  const strictGameTerms = [
+    /\.game\./i, /\.games\./i, /puzzle/i, /arcade/i,
+    /candy/i, /crush/i, /clash/i, /craft/i, /quest/i,
+    /tile/i, /match3/i, /bubble/i, /jewel/i, /solitaire/i,
+    /poker/i, /chess/i, /sudoku/i, /trivia/i, /quiz/i,
+    /zombie/i, /dragon/i, /ninja/i, /hero/i, /saga/i,
+    /tower/i, /defense/i, /battle/i, /strike/i, /war\./i,
+    /farm/i, /city/i, /tycoon/i, /idle/i, /clicker/i,
+    /racing/i, /drift/i, /runner/i, /endless/i,
+    /pool/i, /billiard/i, /snooker/i, /8ball/i
+  ];
+  
+  return strictGameTerms.some(pattern => pattern.test(lowerPkg));
 }
 
 // Scan installed apps (games only)
@@ -209,29 +232,28 @@ async function handleScanApps(deviceId, category) {
     .filter((pkg) => pkg);
 
   console.log(`Found ${packages.length} third-party packages, filtering for games...`);
+  console.log('All packages:', packages.join(', '));
 
   const apps = [];
   for (const pkg of packages) {
-    // Only include games
+    // Only include actual games
     if (!isGamePackage(pkg)) {
+      console.log(`Skipping non-game: ${pkg}`);
       continue;
     }
 
-    try {
-      const name = pkg.split('.').pop().replace(/([A-Z])/g, ' $1').trim() || pkg;
+    console.log(`Including game: ${pkg}`);
+    const name = pkg.split('.').pop().replace(/([A-Z])/g, ' $1').trim() || pkg;
 
-      apps.push({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        packageName: pkg,
-        category: 'Game',
-        icon: '🎮',
-      });
-    } catch (err) {
-      console.log(`Skipping package: ${pkg}`);
-    }
+    apps.push({
+      name: name.charAt(0).toUpperCase() + name.slice(1),
+      packageName: pkg,
+      category: 'Game',
+      icon: '🎮',
+    });
   }
 
-  console.log(`Found ${apps.length} games after filtering`);
+  console.log(`Found ${apps.length} games after strict filtering:`, apps.map(a => a.name).join(', '));
   return apps;
 }
 
