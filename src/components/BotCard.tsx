@@ -2,8 +2,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Pause, Square, Settings, TrendingUp, Smartphone, Rocket } from "lucide-react";
-import { useState } from "react";
+import { Play, Pause, Square, Settings, TrendingUp, Smartphone, Rocket, Gamepad2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -28,6 +28,18 @@ interface BotCardProps {
 export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [actionsCount, setActionsCount] = useState(0);
+  const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (playIntervalRef.current) {
+        clearInterval(playIntervalRef.current);
+      }
+    };
+  }, []);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -87,6 +99,57 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
     }
   };
 
+  // Start bot automation - runs the bot loop continuously
+  const handleStartPlaying = async () => {
+    if (!game.sessionId) {
+      toast.error("No active session. Launch the game first!");
+      return;
+    }
+
+    setIsPlaying(true);
+    toast.success(`🤖 Bot started playing ${game.name}!`, { duration: 3000 });
+
+    // Run bot loop every 2 seconds
+    const runLoop = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('device-automation', {
+          body: {
+            action: 'run_bot_loop',
+            payload: {
+              sessionId: game.sessionId,
+              iterations: 3  // 3 actions per loop
+            }
+          }
+        });
+
+        if (error) {
+          console.error('Bot loop error:', error);
+          return;
+        }
+
+        if (data.success) {
+          setActionsCount(data.totalActions || 0);
+        }
+      } catch (error) {
+        console.error('Bot loop failed:', error);
+      }
+    };
+
+    // Run immediately, then every 2 seconds
+    runLoop();
+    playIntervalRef.current = setInterval(runLoop, 2000);
+  };
+
+  // Stop bot automation
+  const handleStopPlaying = () => {
+    if (playIntervalRef.current) {
+      clearInterval(playIntervalRef.current);
+      playIntervalRef.current = null;
+    }
+    setIsPlaying(false);
+    toast.info(`⏹️ Bot stopped playing ${game.name}`);
+  };
+
   return (
     <Card 
       className="relative overflow-hidden border-gaming-border bg-gaming-card hover:shadow-neon transition-all duration-300 group"
@@ -138,13 +201,40 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
           </div>
 
           <div className="flex flex-col gap-2 pt-4">
+            {/* Bot automation controls */}
+            {game.sessionId && game.status === "active" && (
+              <div className="flex gap-2">
+                {!isPlaying ? (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleStartPlaying}
+                    className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg border-0 font-bold"
+                  >
+                    <Gamepad2 className="w-4 h-4 mr-2" />
+                    Start Bot ({actionsCount} actions)
+                  </Button>
+                ) : (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleStopPlaying}
+                    className="flex-1 animate-pulse"
+                  >
+                    <Square className="w-4 h-4 mr-2" />
+                    Stop Bot ({actionsCount} actions)
+                  </Button>
+                )}
+              </div>
+            )}
+
             {/* Launch on Device button - visible for any game with device info */}
             {game.deviceId && game.packageName && (
               <Button
                 variant="default"
                 size="sm"
                 onClick={handleLaunchOnDevice}
-                disabled={isLaunching}
+                disabled={isLaunching || isPlaying}
                 className="w-full bg-neon-purple hover:bg-neon-purple/80 text-white border-0 font-bold"
               >
                 <Rocket className={`w-4 h-4 mr-2 ${isLaunching ? 'animate-pulse' : ''}`} />
