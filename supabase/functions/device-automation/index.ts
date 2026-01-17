@@ -238,6 +238,10 @@ serve(async (req) => {
         return await checkDeviceStatus(supabaseClient, payload.deviceId)
       case 'update_device':
         return await updateDevice(supabaseClient, payload)
+      case 'run_bot_loop':
+        return await runBotLoop(supabaseClient, payload.sessionId, payload.iterations || 1)
+      case 'execute_tap':
+        return await executeTapAction(supabaseClient, payload.deviceId, payload.x, payload.y)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -1111,4 +1115,272 @@ async function updateDevice(supabaseClient: any, payload: { deviceId: string; up
     status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
+}
+
+// ============ BOT AUTOMATION FUNCTIONS ============
+
+// Run bot automation loop - takes screenshots, analyzes, and performs actions
+async function runBotLoop(supabaseClient: any, sessionId: string, iterations: number = 1) {
+  console.log(`🤖 Starting bot loop for session ${sessionId}, iterations: ${iterations}`)
+  
+  try {
+    // Get session with device info
+    const { data: session, error: sessionError } = await supabaseClient
+      .from('bot_sessions')
+      .select('*, devices(*)')
+      .eq('id', sessionId)
+      .single()
+    
+    if (sessionError || !session) {
+      throw new Error(`Session not found: ${sessionId}`)
+    }
+    
+    if (session.status !== 'running') {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: `Session is ${session.status}, not running` 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+    
+    const device = session.devices
+    if (!device || device.status !== 'online') {
+      throw new Error('Device is offline')
+    }
+    
+    const adbServerUrl = await getAdbServerUrl(supabaseClient)
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    
+    const results: any[] = []
+    let actionsPerformed = session.actions_performed || 0
+    
+    for (let i = 0; i < iterations; i++) {
+      console.log(`🔄 Bot loop iteration ${i + 1}/${iterations}`)
+      
+      // 1. Take screenshot
+      const screenshot = await takeRealScreenshot(baseUrl, device.device_id)
+      
+      // 2. Analyze screenshot to find tap targets
+      const analysis = await analyzeScreenForActions(session.game_name, screenshot)
+      
+      // 3. Execute the recommended action
+      if (analysis.action) {
+        const actionResult = await executeRealAction(baseUrl, analysis.action)
+        actionsPerformed++
+        
+        // Log the action
+        await supabaseClient
+          .from('bot_actions')
+          .insert({
+            session_id: sessionId,
+            action_type: analysis.action.type,
+            coordinates: analysis.action.coordinates,
+            success: actionResult.success,
+            execution_time_ms: actionResult.executionTime || 100
+          })
+        
+        results.push({
+          iteration: i + 1,
+          action: analysis.action,
+          result: actionResult,
+          description: analysis.description
+        })
+      }
+      
+      // Small delay between iterations
+      if (i < iterations - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+    
+    // Update session stats
+    await supabaseClient
+      .from('bot_sessions')
+      .update({
+        actions_performed: actionsPerformed,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', sessionId)
+    
+    console.log(`✅ Bot loop completed: ${results.length} actions performed`)
+    
+    return new Response(JSON.stringify({ 
+      success: true,
+      actionsPerformed: results.length,
+      totalActions: actionsPerformed,
+      results
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('❌ Bot loop error:', error)
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+// Take a real screenshot from device
+async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<string> {
+  try {
+    const response = await fetch(`${baseUrl}/screenshot`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
+      body: JSON.stringify({ deviceId }),
+      signal: AbortSignal.timeout(10000)
+    })
+    
+    if (!response.ok) {
+      console.error('Screenshot failed:', await response.text())
+      return ''
+    }
+    
+    const result = await response.json()
+    return result.screenshot || ''
+  } catch (error) {
+    console.error('Screenshot error:', error)
+    return ''
+  }
+}
+
+// Analyze screenshot and determine next action - simple heuristics for now
+async function analyzeScreenForActions(gameName: string, screenshot: string): Promise<{
+  action: DeviceAction | null
+  description: string
+}> {
+  // For now, use simple game-specific heuristics
+  // This can later be enhanced with real AI vision
+  
+  const lowerGame = gameName.toLowerCase()
+  
+  // Tile-matching games (Tilepark, etc.)
+  if (lowerGame.includes('tile') || lowerGame.includes('match') || lowerGame.includes('puzzle')) {
+    // Random tap in the game area (center of screen)
+    const x = 200 + Math.floor(Math.random() * 400)  // 200-600
+    const y = 600 + Math.floor(Math.random() * 600)  // 600-1200 (game board area)
+    
+    return {
+      action: {
+        type: 'tap',
+        coordinates: { x, y }
+      },
+      description: `Tapping tile at (${x}, ${y})`
+    }
+  }
+  
+  // Pool/Billiard games
+  if (lowerGame.includes('pool') || lowerGame.includes('billiard') || lowerGame.includes('snooker')) {
+    // For pool games, we'd need to analyze ball positions
+    // For now, tap in play area
+    const x = 300 + Math.floor(Math.random() * 300)
+    const y = 800 + Math.floor(Math.random() * 400)
+    
+    return {
+      action: {
+        type: 'tap',
+        coordinates: { x, y }
+      },
+      description: `Pool shot at (${x}, ${y})`
+    }
+  }
+  
+  // Default: tap center of screen (for menus, "Play" buttons, etc.)
+  return {
+    action: {
+      type: 'tap',
+      coordinates: { x: 540, y: 960 }  // Center of 1080x1920 screen
+    },
+    description: 'Tapping center of screen'
+  }
+}
+
+// Execute a real action on device
+async function executeRealAction(baseUrl: string, action: DeviceAction): Promise<{
+  success: boolean
+  executionTime: number
+}> {
+  const startTime = Date.now()
+  
+  try {
+    const response = await fetch(`${baseUrl}/action`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        'User-Agent': 'Lovable-Bot-Automation/1.0'
+      },
+      body: JSON.stringify(action),
+      signal: AbortSignal.timeout(5000)
+    })
+    
+    const executionTime = Date.now() - startTime
+    
+    if (!response.ok) {
+      console.error('Action failed:', await response.text())
+      return { success: false, executionTime }
+    }
+    
+    const result = await response.json()
+    console.log(`✅ Action executed in ${executionTime}ms:`, result)
+    
+    return { success: result.success !== false, executionTime }
+  } catch (error) {
+    console.error('Action error:', error)
+    return { success: false, executionTime: Date.now() - startTime }
+  }
+}
+
+// Execute a direct tap action on device
+async function executeTapAction(supabaseClient: any, deviceId: string, x: number, y: number) {
+  console.log(`👆 Executing tap at (${x}, ${y}) on device ${deviceId}`)
+  
+  try {
+    // Get device info
+    const { data: device, error } = await supabaseClient
+      .from('devices')
+      .select('*')
+      .eq('id', deviceId)
+      .single()
+    
+    if (error || !device) {
+      throw new Error('Device not found')
+    }
+    
+    if (device.status !== 'online') {
+      throw new Error('Device is offline')
+    }
+    
+    const adbServerUrl = await getAdbServerUrl(supabaseClient)
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    
+    const action: DeviceAction = {
+      type: 'tap',
+      coordinates: { x, y }
+    }
+    
+    const result = await executeRealAction(baseUrl, action)
+    
+    return new Response(JSON.stringify({ 
+      success: result.success,
+      coordinates: { x, y },
+      executionTime: result.executionTime
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('Tap action error:', error)
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
 }
