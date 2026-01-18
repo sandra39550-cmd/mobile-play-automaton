@@ -247,11 +247,19 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={() => onStatusChange(game.id, "active")}
+                  onClick={async () => {
+                    // First change status to active
+                    onStatusChange(game.id, "active");
+                    // Then launch on device if we have device info
+                    if (game.deviceId && game.packageName) {
+                      await handleLaunchOnDevice();
+                    }
+                  }}
+                  disabled={isLaunching}
                   className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg border-0 font-bold"
                 >
-                  <Play className="w-4 h-4 mr-1" />
-                  Play Now
+                  <Play className={`w-4 h-4 mr-1 ${isLaunching ? 'animate-spin' : ''}`} />
+                  {isLaunching ? 'Launching...' : 'Play Now'}
                 </Button>
               )}
               
