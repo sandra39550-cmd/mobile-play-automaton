@@ -71,18 +71,22 @@ app.get('/devices', async (req, res) => {
 
 // Execute device action
 app.post('/action', async (req, res) => {
-  const { type, coordinates, packageName, swipeDirection, duration } = req.body;
-  
+  const { type, coordinates, packageName, swipeDirection, duration, deviceId } = req.body;
+
   console.log('Executing action:', type, req.body);
-  
+
   try {
+    // If a specific deviceId is provided, target it explicitly with `adb -s`.
+    // This is critical when multiple devices/emulators are connected.
+    const adbPrefix = deviceId ? `adb -s ${deviceId}` : 'adb';
+
     let command = '';
-    
+
     switch (type) {
       case 'tap':
-        command = `adb shell input tap ${coordinates.x} ${coordinates.y}`;
+        command = `${adbPrefix} shell input tap ${coordinates.x} ${coordinates.y}`;
         break;
-        
+
       case 'swipe':
         const directions = {
           up: '540 1500 540 500',
@@ -91,39 +95,39 @@ app.post('/action', async (req, res) => {
           right: '100 960 900 960'
         };
         const swipeCoords = directions[swipeDirection] || directions.up;
-        command = `adb shell input swipe ${swipeCoords} ${duration || 300}`;
+        command = `${adbPrefix} shell input swipe ${swipeCoords} ${duration || 300}`;
         break;
-        
+
       case 'open_app':
-        command = `adb shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
+        command = `${adbPrefix} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
         break;
-        
+
       case 'close_app':
-        command = `adb shell am force-stop ${packageName}`;
+        command = `${adbPrefix} shell am force-stop ${packageName}`;
         break;
-        
+
       case 'screenshot':
-        command = 'adb shell screencap -p /sdcard/screenshot.png';
+        command = `${adbPrefix} shell screencap -p /sdcard/screenshot.png`;
         break;
-        
+
       default:
         return res.status(400).json({ success: false, error: 'Unknown action type' });
     }
-    
+
     const { stdout, stderr } = await execPromise(command);
-    
+
     console.log('Action result:', stdout || 'success');
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       result: stdout || `${type} executed successfully`,
-      error: stderr 
+      error: stderr
     });
   } catch (error) {
     console.error('Action error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -131,37 +135,39 @@ app.post('/action', async (req, res) => {
 // Take screenshot
 app.post('/screenshot', async (req, res) => {
   const { deviceId } = req.body;
-  
+
   console.log('Taking screenshot for device:', deviceId);
-  
+
   try {
+    const adbPrefix = deviceId ? `adb -s ${deviceId}` : 'adb';
+
     // Take screenshot on device
-    await execPromise('adb shell screencap -p /sdcard/screenshot.png');
-    
+    await execPromise(`${adbPrefix} shell screencap -p /sdcard/screenshot.png`);
+
     // Pull screenshot to server
     const timestamp = Date.now();
     const localPath = path.join(__dirname, `screenshot_${timestamp}.png`);
-    await execPromise(`adb pull /sdcard/screenshot.png ${localPath}`);
-    
+    await execPromise(`${adbPrefix} pull /sdcard/screenshot.png ${localPath}`);
+
     // Read and convert to base64
     const imageBuffer = fs.readFileSync(localPath);
     const base64Image = `data:image/png;base64,${imageBuffer.toString('base64')}`;
-    
+
     // Cleanup
     fs.unlinkSync(localPath);
-    await execPromise('adb shell rm /sdcard/screenshot.png');
-    
+    await execPromise(`${adbPrefix} shell rm /sdcard/screenshot.png`);
+
     console.log('Screenshot captured successfully');
-    
-    res.json({ 
-      success: true, 
-      screenshot: base64Image 
+
+    res.json({
+      success: true,
+      screenshot: base64Image
     });
   } catch (error) {
     console.error('Screenshot error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
