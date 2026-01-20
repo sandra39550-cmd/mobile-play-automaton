@@ -124,20 +124,23 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
                     // Launch game on device
                     if (game.deviceId && game.packageName) {
                       setIsLaunching(true);
-                      toast.loading(`🚀 Launching ${game.name}...`, { id: 'launch-game' });
+                      console.log(`🎮 Launching ${game.name} on device ${game.deviceId} with package ${game.packageName}`);
+                      toast.loading(`🚀 Launching ${game.name} on device ${game.deviceId}...`, { id: 'launch-game' });
 
                       try {
                         const { data, error } = await supabase.functions.invoke('device-automation', {
                           body: {
                             action: 'start_bot_session',
                             payload: {
-                              deviceId: game.deviceId,
+                              deviceId: game.deviceId,  // This is now the hardware ID (e.g., 330021a82ec4c231)
                               gameName: game.name,
                               packageName: game.packageName,
                               config: {},
                             }
                           }
                         });
+                        
+                        console.log('🎮 Launch response:', data);
 
                         if (error) throw error;
 

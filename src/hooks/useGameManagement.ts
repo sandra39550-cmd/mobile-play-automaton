@@ -31,6 +31,12 @@ export const useGameManagement = () => {
       
       const gameMap = new Map<string, GameBot>();
 
+      // Build a lookup from database UUID to hardware device_id
+      const deviceHwIdMap = new Map<string, string>();
+      devices.forEach(device => {
+        deviceHwIdMap.set(device.id, device.device_id);
+      });
+
       // Add games from active sessions - get info from deviceGames
       sessions.forEach((session) => {
         // Find game info from any device's scanned games
@@ -41,6 +47,9 @@ export const useGameManagement = () => {
         }
         
         if (gameInfo) {
+          // Use hardware device_id for ADB commands, not database UUID
+          const hardwareDeviceId = deviceHwIdMap.get(session.device_id) || session.device_id;
+          
           gameMap.set(session.package_name, {
             id: session.id,
             name: gameInfo.name,
@@ -53,14 +62,18 @@ export const useGameManagement = () => {
             level: Math.floor((session.runtime_minutes || 0) / 30) + 1,
             currency: session.currency_earned || 0,
             hourlyRate: Math.floor((session.currency_earned || 0) / Math.max((session.runtime_minutes || 1) / 60, 1)),
-            deviceId: session.device_id || undefined,
+            deviceId: hardwareDeviceId,
             sessionId: session.id,
           });
         }
       });
 
       // Add games from scanned devices (only for stopped games not already in sessions)
-      Object.values(deviceGames).forEach(deviceGameList => {
+      // Track which device each game was scanned from
+      Object.entries(deviceGames).forEach(([dbDeviceId, deviceGameList]) => {
+        // Get hardware device_id for this device
+        const hardwareDeviceId = deviceHwIdMap.get(dbDeviceId) || dbDeviceId;
+        
         deviceGameList.forEach(deviceGame => {
           if (!gameMap.has(deviceGame.packageName)) {
             gameMap.set(deviceGame.packageName, {
@@ -74,6 +87,7 @@ export const useGameManagement = () => {
               level: 1,
               currency: 0,
               hourlyRate: 0,
+              deviceId: hardwareDeviceId, // Include hardware device ID for scanned games
             });
           }
         });
