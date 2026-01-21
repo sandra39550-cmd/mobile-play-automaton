@@ -1083,24 +1083,45 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
 async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<string> {
   try {
     console.log(`📸 Taking screenshot from device: ${deviceId}`)
-    
-    const response = await fetch(`${baseUrl}/screenshot`, {
+
+    // Prefer POST (JSON body), but allow GET fallback for tunnels/proxies that block POST.
+    const postResponse = await fetch(`${baseUrl}/screenshot`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        ...ngrokBypassHeaders
+        ...ngrokBypassHeaders,
       },
       body: JSON.stringify({ deviceId }),
-      signal: AbortSignal.timeout(10000)
+      signal: AbortSignal.timeout(15000),
     })
-    
-    if (!response.ok) {
-      console.error('Screenshot failed:', await response.text())
+
+    if (postResponse.ok) {
+      const result = await postResponse.json()
+      console.log('📸 Screenshot captured successfully (POST)')
+      return result.screenshot || ''
+    }
+
+    const postText = await postResponse.text()
+    console.error('Screenshot POST failed:', postText)
+
+    const url = new URL(`${baseUrl}/screenshot`)
+    url.searchParams.set('deviceId', deviceId)
+
+    const getResponse = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        ...ngrokBypassHeaders,
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (!getResponse.ok) {
+      console.error('Screenshot GET failed:', await getResponse.text())
       return ''
     }
-    
-    const result = await response.json()
-    console.log('📸 Screenshot captured successfully')
+
+    const result = await getResponse.json()
+    console.log('📸 Screenshot captured successfully (GET)')
     return result.screenshot || ''
   } catch (error) {
     console.error('Screenshot error:', error)
