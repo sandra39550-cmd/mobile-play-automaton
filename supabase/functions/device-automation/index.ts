@@ -17,6 +17,7 @@ interface DeviceAction {
   swipeDirection?: 'up' | 'down' | 'left' | 'right'
   packageName?: string
   duration?: number
+  deviceId?: string
 }
 
 interface GameBot {
@@ -52,6 +53,7 @@ const KNOWN_GAME_PACKAGES = [
   'com.pubg',
   'com.activision.callofduty',
   'com.roblox.client',
+  'funvent.tilepark', // Tile Park specific
 ]
 
 // Package name patterns that indicate games
@@ -79,10 +81,11 @@ const GAME_PATTERNS = [
   /saga/i,
   /run/i,
   /jump/i,
+  /tilepark/i,
+  /tile/i,
 ]
 
 function isSkippedPackage(pkg: string): boolean {
-  // Skip system packages and common non-game apps
   const skipPrefixes = [
     'com.android.',
     'com.google.android.',
@@ -90,12 +93,12 @@ function isSkippedPackage(pkg: string): boolean {
     'com.sec.',
     'com.microsoft.',
     'com.facebook.',
-    'com.monotype.',        // Fonts
-    'com.dsi.ant.',         // ANT+ services
-    'com.gd.mobicore.',     // Security services
-    'com.osp.',             // Samsung services
-    'org.simalliance.',     // SIM services
-    'com.cleanmaster.',     // Cleaner apps
+    'com.monotype.',
+    'com.dsi.ant.',
+    'com.gd.mobicore.',
+    'com.osp.',
+    'org.simalliance.',
+    'com.cleanmaster.',
     'android.',
   ]
   
@@ -108,13 +111,9 @@ function isSkippedPackage(pkg: string): boolean {
     'com.wssyncmldm',
   ]
   
-  // Skip if matches any prefix
   if (skipPrefixes.some(prefix => pkg.startsWith(prefix))) return true
-  
-  // Skip if exact match
   if (skipExact.includes(pkg)) return true
   
-  // Skip packages that look like system services (contain 'service', 'provider', 'signin', etc.)
   const systemPatterns = [
     /\.service$/i,
     /\.provider$/i,
@@ -134,10 +133,8 @@ function filterGamePackages(packages: string[]): { packageName: string; name: st
   const games: { packageName: string; name: string }[] = []
 
   for (const pkg of packages) {
-    // Skip system/common non-game packages
     if (isSkippedPackage(pkg)) continue
 
-    // Check if it's a known game
     const isKnownGame = KNOWN_GAME_PACKAGES.some((known) => pkg.startsWith(known))
     const matchesPattern = GAME_PATTERNS.some((pattern) => pattern.test(pkg))
 
@@ -159,11 +156,9 @@ function packagesToApps(packages: string[]): { packageName: string; name: string
 }
 
 function formatPackageName(pkg: string): string {
-  // Extract last part of package name and format it
   const parts = pkg.split('.')
   const lastPart = parts[parts.length - 1]
   
-  // Convert camelCase/lowercase to Title Case with spaces
   return lastPart
     .replace(/([A-Z])/g, ' $1')
     .replace(/[_-]/g, ' ')
@@ -176,7 +171,6 @@ function formatPackageName(pkg: string): string {
 // Get ADB server URL from database (auto-detected) or fallback to env var
 async function getAdbServerUrl(supabaseClient: any): Promise<string> {
   try {
-    // Try to get the URL from the database first (auto-detected by ADB server)
     const { data, error } = await supabaseClient
       .from('adb_server_config')
       .select('server_url')
@@ -190,7 +184,6 @@ async function getAdbServerUrl(supabaseClient: any): Promise<string> {
       return data.server_url
     }
 
-    // Fallback to environment variable if database lookup fails
     const envUrl = Deno.env.get('ADB_SERVER_URL')
     if (envUrl) {
       console.log('⚙️  Using ADB server URL from environment variable:', envUrl)
@@ -218,7 +211,6 @@ serve(async (req) => {
     const { action, payload } = await req.json()
     console.log(`Device automation action: ${action}`, payload)
 
-    // Use NULL for user_id since we removed authentication
     const defaultUserId = null
 
     switch (action) {
@@ -239,9 +231,11 @@ serve(async (req) => {
       case 'update_device':
         return await updateDevice(supabaseClient, payload)
       case 'run_bot_loop':
-        return await runBotLoop(supabaseClient, payload.sessionId, payload.iterations || 1)
+        return await runBotLoop(supabaseClient, payload.sessionId, payload.deviceId, payload.iterations || 1)
       case 'execute_tap':
         return await executeTapAction(supabaseClient, payload.deviceId, payload.x, payload.y)
+      case 'analyze_screen':
+        return await analyzeScreenWithAI(supabaseClient, payload.deviceId, payload.gameName)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -260,7 +254,6 @@ serve(async (req) => {
 async function connectDevice(supabaseClient: any, userId: string, deviceInfo: any) {
   console.log('Connecting device:', deviceInfo)
   
-  // Get real device ID from ADB
   let realDeviceId = deviceInfo.deviceId
   const adbServerUrl = await getAdbServerUrl(supabaseClient)
   
@@ -287,10 +280,8 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
     }
   }
   
-  // Check device status
   const deviceStatus = await checkADBConnection(realDeviceId, supabaseClient)
   
-  // Check if device already exists (check by name to allow ID updates)
   const { data: existingDevice } = await supabaseClient
     .from('devices')
     .select('id')
@@ -300,7 +291,6 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   let data, error
   
   if (existingDevice) {
-    // Update existing device with real device ID
     const result = await supabaseClient
       .from('devices')
       .update({
@@ -320,7 +310,6 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
     data = result.data
     error = result.error
   } else {
-    // Insert new device with real device ID
     const result = await supabaseClient
       .from('devices')
       .insert({
@@ -358,7 +347,6 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
 async function startBotSession(supabaseClient: any, userId: string, sessionData: any) {
   console.log('Starting bot session:', sessionData)
   
-  // Verify device exists and is online - try both UUID 'id' and hardware 'device_id'
   let device = null
   let deviceError = null
   
@@ -392,12 +380,12 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
     throw new Error(`Device ${device.name} is ${device.status}`)
   }
 
-  // Create bot session using the database UUID (device.id), not the hardware ID
+  // Create bot session using the database UUID (device.id)
   const { data: session, error } = await supabaseClient
     .from('bot_sessions')
     .insert({
       user_id: userId,
-      device_id: device.id,  // Use database UUID, not hardware device_id
+      device_id: device.id,
       game_name: sessionData.gameName,
       package_name: sessionData.packageName,
       status: 'running',
@@ -408,7 +396,7 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
 
   if (error) throw error
 
-  // Launch the game on the device
+  // Launch the game on the device - pass hardware device_id
   const launchResult = await launchGameOnDevice(supabaseClient, device, sessionData.packageName)
   
   console.log('Game launch result:', launchResult)
@@ -417,7 +405,8 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
     success: true, 
     session: session,
     launched: launchResult.success,
-    launchMessage: launchResult.message
+    launchMessage: launchResult.message,
+    hardwareDeviceId: device.device_id  // Return hardware ID for bot loop
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
@@ -426,15 +415,10 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
 async function executeDeviceAction(supabaseClient: any, actionData: DeviceAction & { sessionId: string }) {
   console.log('Executing device action:', actionData)
   
-  // Record the action in database
   const startTime = Date.now()
-  
-  // Simulate executing the action on the real device
-  const result = await simulateDeviceAction(actionData)
-  
+  const result = await simulateDeviceAction(actionData, supabaseClient)
   const executionTime = Date.now() - startTime
   
-  // Log the action
   await supabaseClient
     .from('bot_actions')
     .insert({
@@ -453,12 +437,11 @@ async function executeDeviceAction(supabaseClient: any, actionData: DeviceAction
 async function getDeviceScreenshot(supabaseClient: any, deviceId: string) {
   console.log('Taking screenshot for device:', deviceId)
   
-  // Simulate taking a screenshot from the device
-  const screenshot = await simulateScreenshot(deviceId)
+  const screenshot = await simulateScreenshot(deviceId, supabaseClient)
   
   return new Response(JSON.stringify({ 
     success: true, 
-    screenshot: screenshot // Base64 encoded image
+    screenshot: screenshot
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
@@ -487,12 +470,10 @@ async function stopBotSession(supabaseClient: any, sessionId: string) {
   })
 }
 
-// Check device status via ADB
 async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
   console.log('Checking device status via ADB:', deviceId)
   
   try {
-    // Get device from database
     const { data: device, error: deviceError } = await supabaseClient
       .from('devices')
       .select('*')
@@ -503,10 +484,8 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
       throw new Error('Device not found')
     }
 
-    // Check if device is actually connected via ADB
     const isConnected = await checkADBConnection(device.device_id, supabaseClient)
     
-    // Update device status in database
     const newStatus = isConnected ? 'online' : 'offline'
     await supabaseClient
       .from('devices')
@@ -538,7 +517,6 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
   }
 }
 
-// Check if device is connected via ADB (USB or wireless)
 async function checkADBConnection(deviceId: string, supabaseClient?: any): Promise<boolean> {
   try {
     let adbServerUrl: string | null = null
@@ -555,7 +533,7 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     }
     
     if (!adbServerUrl) {
-      console.error('⚠️ ADB_SERVER_URL not configured - device cannot be online without ADB server')
+      console.error('⚠️ ADB_SERVER_URL not configured')
       return false
     }
 
@@ -566,12 +544,12 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     
     const response = await fetch(statusUrl, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(5000) // 5 second timeout
+      headers: { 'Content-Type': 'application/json', ...ngrokBypassHeaders },
+      signal: AbortSignal.timeout(5000)
     })
     
     if (!response.ok) {
-      console.error('❌ ADB server request failed:', response.status, await response.text())
+      console.error('❌ ADB server request failed:', response.status)
       return false
     }
     
@@ -579,18 +557,14 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     const connectedDevices = result.devices || []
     
     console.log('📱 Connected devices via ADB:', JSON.stringify(connectedDevices))
-    console.log(`🔎 Looking for device: ${deviceId}`)
     
-    // Check if our device is in the list of connected devices (USB or wireless)
     const isConnected = connectedDevices.some((d: any) => {
       const matchesSerial = d.id === deviceId || d.serial === deviceId
-      // Handle both 'status' and 'type' field names, check for 'device' value
       const isDevice = d.status === 'device' || d.type === 'device'
-      console.log(`  Comparing: ${d.id} === ${deviceId}, status/type: ${d.status || d.type}, match: ${matchesSerial && isDevice}`)
       return matchesSerial && isDevice
     })
     
-    console.log(`✅ Device ${deviceId} final status: ${isConnected ? '🟢 ONLINE' : '🔴 OFFLINE'}`)
+    console.log(`✅ Device ${deviceId} status: ${isConnected ? '🟢 ONLINE' : '🔴 OFFLINE'}`)
     return isConnected
   } catch (error) {
     console.error('❌ Error checking device via ADB:', error.message)
@@ -598,70 +572,34 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
   }
 }
 
-// Real ADB device connection functions
-async function simulateDeviceConnection(deviceInfo: any): Promise<boolean> {
+async function simulateDeviceAction(action: DeviceAction, supabaseClient?: any): Promise<{ success: boolean; result?: any }> {
   try {
-    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
-    if (!adbServerUrl) {
-      console.warn('ADB_SERVER_URL not configured, treating device as online')
-      return true
-    }
-
-    console.log('Connecting to real device:', deviceInfo.deviceId)
+    let adbServerUrl: string | null = null
     
-    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
-    
-    // First, get list of connected devices to find the real device ID
-    try {
-      const devicesResponse = await fetch(`${baseUrl}/devices`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(5000)
-      })
-      
-      if (devicesResponse.ok) {
-        const devicesResult = await devicesResponse.json()
-        const connectedDevices = devicesResult.devices || []
-        console.log('Found connected devices:', JSON.stringify(connectedDevices))
-        
-          // If there are connected devices, use the first one's ID
-          if (connectedDevices.length > 0) {
-            const realDeviceId = connectedDevices[0].id
-            console.log(`Using real device ID from ADB: ${realDeviceId}`)
-            // Check connection using the real device ID - no supabaseClient needed in this helper
-            return await checkADBConnection(realDeviceId)
-          }
+    if (supabaseClient) {
+      try {
+        adbServerUrl = await getAdbServerUrl(supabaseClient)
+      } catch (e) {
+        adbServerUrl = Deno.env.get('ADB_SERVER_URL') || null
       }
-    } catch (error) {
-      console.error('Error getting device list:', error)
+    } else {
+      adbServerUrl = Deno.env.get('ADB_SERVER_URL') || null
     }
     
-    // Fallback: check with provided device ID
-    return await checkADBConnection(deviceInfo.deviceId)
-  } catch (error) {
-    console.error('Error in device connection:', error)
-    return false
-  }
-}
-
-async function simulateDeviceAction(action: DeviceAction): Promise<{ success: boolean; result?: any }> {
-  try {
-    // Note: This function is called without supabaseClient, so we use env var fallback
-    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
     if (!adbServerUrl) {
       console.warn('ADB_SERVER_URL not configured, using simulation mode')
       await new Promise(resolve => setTimeout(resolve, 500))
       return { success: true, result: `Simulated ${action.type}` }
     }
 
-    console.log('Executing real device action:', action.type)
+    console.log('Executing real device action:', action.type, 'on device:', action.deviceId)
     
-    // Ensure URL has protocol
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     const actionUrl = `${baseUrl}/action`
+    
     const response = await fetch(actionUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...ngrokBypassHeaders },
       body: JSON.stringify(action)
     })
     
@@ -679,37 +617,46 @@ async function simulateDeviceAction(action: DeviceAction): Promise<{ success: bo
   }
 }
 
-async function simulateScreenshot(deviceId: string): Promise<string> {
+async function simulateScreenshot(deviceId: string, supabaseClient?: any): Promise<string> {
   try {
-    // Note: This function is called without supabaseClient, so we use env var fallback
-    const adbServerUrl = Deno.env.get('ADB_SERVER_URL')
+    let adbServerUrl: string | null = null
+    
+    if (supabaseClient) {
+      try {
+        adbServerUrl = await getAdbServerUrl(supabaseClient)
+      } catch (e) {
+        adbServerUrl = Deno.env.get('ADB_SERVER_URL') || null
+      }
+    } else {
+      adbServerUrl = Deno.env.get('ADB_SERVER_URL') || null
+    }
+    
     if (!adbServerUrl) {
       console.warn('ADB_SERVER_URL not configured, using placeholder')
-      await new Promise(resolve => setTimeout(resolve, 2000))
       return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
     }
 
     console.log('Taking real screenshot from device:', deviceId)
     
-    // Ensure URL has protocol
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     const screenshotUrl = `${baseUrl}/screenshot`
+    
     const response = await fetch(screenshotUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...ngrokBypassHeaders },
       body: JSON.stringify({ deviceId })
     })
     
     if (!response.ok) {
       console.error('Failed to take screenshot:', await response.text())
-      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      return ""
     }
     
     const result = await response.json()
-    return result.screenshot || "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    return result.screenshot || ""
   } catch (error) {
     console.error('Error taking screenshot:', error)
-    return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    return ""
   }
 }
 
@@ -719,17 +666,13 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
     
     const adbServerUrl = await getAdbServerUrl(supabaseClient)
     
-    // Verify device is online
     const { data: device, error: deviceError } = await supabaseClient
       .from('devices')
       .select('*')
       .eq('id', deviceId)
       .single()
 
-    console.log('Device lookup result:', device, 'Error:', deviceError)
-
     if (deviceError || !device) {
-      console.error('Device not found or error:', deviceError)
       return new Response(JSON.stringify({ 
         success: false,
         error: 'Device not found',
@@ -739,23 +682,17 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
       })
     }
 
-    console.log(`Device found: ${device.name}, status: ${device.status}, device_id: ${device.device_id}`)
-
     if (device.status !== 'online') {
       return new Response(JSON.stringify({ 
         success: false,
-        error: `Device ${device.name} is ${device.status}. Please ensure device is connected via ADB.`,
+        error: `Device ${device.name} is ${device.status}`,
         games: []
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Scan installed games on the device
     const installedGames = await simulateGameScan(device, adbServerUrl)
-    
-    console.log('=== SCAN COMPLETE, RETURNING GAMES ===')
-    console.log('Games found:', JSON.stringify(installedGames))
     
     return new Response(JSON.stringify({ 
       success: true, 
@@ -764,10 +701,8 @@ async function scanDeviceGames(supabaseClient: any, deviceId: string) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   } catch (error) {
-    console.error('=== SCAN FAILED ===')
-    console.error('Error:', error.message)
+    console.error('Scan failed:', error.message)
     
-    // Always return 200 with success:false for proper error handling
     return new Response(JSON.stringify({ 
       success: false,
       error: error.message,
@@ -782,291 +717,149 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
   console.log(`🔍 Scanning real games on device: ${device.name} (device_id: ${device.device_id})`)
   
   if (!adbServerUrl) {
-    const errorMsg = '❌ ADB_SERVER_URL not configured - cannot scan real games'
-    console.error(errorMsg)
-    throw new Error('ADB server not configured. Please ensure ngrok tunnel is running.')
+    throw new Error('ADB server not configured')
   }
 
-  // Ensure URL has protocol
   const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
   
-  // First check if ADB server is reachable
+  // Check if ADB server is reachable
   const healthPaths = ['/health', '/devices']
   let reachable = false
 
   for (const path of healthPaths) {
-    const url = `${baseUrl}${path}`
-    console.log(`🏥 Health check: ${url}`)
-
     try {
-      const res = await fetch(url, {
+      const res = await fetch(`${baseUrl}${path}`, {
         method: 'GET',
-        headers: {
-          ...ngrokBypassHeaders,
-          'Content-Type': 'application/json',
-        },
+        headers: { ...ngrokBypassHeaders, 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(5000),
       })
-
       if (res.ok) {
         reachable = true
         break
       }
-
-      // If /health isn't implemented, many servers return 404; try next endpoint.
-      console.warn(`⚠️ Health check ${path} returned status ${res.status}`)
     } catch (e) {
-      console.warn(`⚠️ Health check ${path} failed: ${e?.message ?? String(e)}`)
+      console.warn(`Health check ${path} failed:`, e?.message)
     }
   }
 
   if (!reachable) {
-    throw new Error(
-      `ADB server is offline at ${baseUrl}. Please ensure:\n1. ADB server is running: cd adb-server && node server.js\n2. ngrok is tunneling localhost:3000: ngrok http 3000\n3. ADB_SERVER_URL env var is set to your ngrok URL`
-    )
+    throw new Error(`ADB server is offline at ${baseUrl}`)
   }
 
   console.log('✅ ADB server is reachable')
 
-  // Now scan for games
+  // Scan for games
   const scanUrl = `${baseUrl}/scan-apps`
-  console.log(`📡 Calling ADB server at: ${scanUrl}`)
-  console.log(`📤 Request body:`, JSON.stringify({ deviceId: device.device_id, category: 'games' }))
   
   try {
     const response = await fetch(scanUrl, {
       method: 'POST',
-      headers: {
-        ...ngrokBypassHeaders,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        deviceId: device.device_id,
-        category: 'games',
-      }),
-      signal: AbortSignal.timeout(15000), // 15 second timeout for scanning
+      headers: { ...ngrokBypassHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: device.device_id, category: 'games' }),
+      signal: AbortSignal.timeout(15000),
     })
 
-    console.log(`📥 ADB server response status: ${response.status}`)
-
-    // Some proxies / mismatched servers return 404 "Cannot POST /scan-apps".
-    // Fall back to GET /scan-apps?deviceId=...&category=games.
     if (!response.ok && response.status === 404) {
-      const fallbackUrl = `${baseUrl}/scan-apps?deviceId=${encodeURIComponent(device.device_id)}&category=${encodeURIComponent('games')}`
-      console.warn(`↩️ Falling back to GET scan endpoint: ${fallbackUrl}`)
-
+      // Fallback to GET
+      const fallbackUrl = `${baseUrl}/scan-apps?deviceId=${encodeURIComponent(device.device_id)}&category=games`
       const fallbackRes = await fetch(fallbackUrl, {
         method: 'GET',
-        headers: {
-          ...ngrokBypassHeaders,
-          'Content-Type': 'application/json',
-        },
+        headers: { ...ngrokBypassHeaders, 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(15000),
       })
 
-      console.log(`📥 ADB server fallback status: ${fallbackRes.status}`)
-
       if (!fallbackRes.ok) {
-        const errorText = await fallbackRes.text()
-        console.error(`❌ Failed to scan games (fallback ${fallbackRes.status}):`, errorText.substring(0, 500))
-
-        if (fallbackRes.status === 404 && /Cannot\s+GET\s+\/scan-apps/i.test(errorText)) {
-          throw new Error(
-            `ADB server at ${baseUrl} does not expose GET /scan-apps (returned 404). ` +
-              `This usually means ngrok is pointing to the wrong service or you’re running an older ADB server. ` +
-              `Start the server from this repo and re-tunnel port 3000:\n` +
-              `1) cd adb-server && node server.js\n` +
-              `2) ngrok http 3000\n` +
-              `Then refresh and try Scan again.`
-          )
-        }
-
-        throw new Error(`ADB server returned ${fallbackRes.status}: ${errorText.substring(0, 200)}`)
+        throw new Error(`Scan failed: ${fallbackRes.status}`)
       }
 
       const result = await fallbackRes.json()
-      console.log(`📦 Raw ADB server response (fallback):`, JSON.stringify(result))
-
-      // Handle both response formats: { apps: [...] } or { devices: [{ packages: [...] }] }
-      let apps = result.apps || []
-
-      // If no apps but devices array exists, try to extract packages from it
-      if (!apps.length && result.devices && Array.isArray(result.devices)) {
-        console.log('📦 Parsing devices/packages format...')
-        const devicePackages = result.devices.flatMap((d: any) => d.packages || [])
-
-      // Only show games - no fallback to all apps
-        const filteredGames = filterGamePackages(devicePackages)
-        apps = filteredGames
-
-        console.log(
-          `🎮 Parsed ${apps.length} apps from ${devicePackages.length} packages (filtered=${filteredGames.length})`
-        )
-      }
-      
-      if (!apps.length) {
-        console.warn('⚠️ No games found after parsing response')
-        return []
-      }
-
-      const mappedGames = apps.map((app: any) => ({
+      return (result.apps || []).map((app: any) => ({
         name: app.name || formatPackageName(app.packageName || app),
         icon: app.icon || '🎮',
         category: app.category || 'Game',
         packageName: app.packageName || app,
         isInstalled: true,
       }))
-
-      console.log(`✅ Successfully scanned ${mappedGames.length} games (fallback):`, mappedGames.map((g: any) => g.name).join(', '))
-      return mappedGames
     }
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`❌ Failed to scan games (${response.status}):`, errorText.substring(0, 500))
-
-      if (response.status === 404 && /Cannot\s+(GET|POST)\s+\/scan-apps/i.test(errorText)) {
-        throw new Error(
-          `ADB server at ${baseUrl} does not expose /scan-apps (returned 404). ` +
-            `Please ensure you are running the included ADB server (adb-server/server.js) and that ngrok is tunneling the same port (3000).`
-        )
-      }
-
-      throw new Error(`ADB server returned ${response.status}: ${errorText.substring(0, 200)}`)
+      throw new Error(`Scan failed: ${response.status}`)
     }
     
     const result = await response.json()
-    console.log(`📦 Raw ADB server response:`, JSON.stringify(result))
-    console.log(`🎮 Apps array:`, JSON.stringify(result.apps))
-    console.log(`📊 Number of apps found: ${(result.apps || []).length}`)
     
-    // If the server returned a different response format, try to parse it too
-    if ((!result.apps || result.apps.length === 0) && result.devices && Array.isArray(result.devices)) {
-      console.log('📦 POST response had no apps; trying devices/packages format...')
-      const devicePackages = result.devices.flatMap((d: any) => d.packages || [])
-      const filteredGames = filterGamePackages(devicePackages)
-      const apps = filteredGames  // Only show games - no fallback to all apps
-
-      if (!apps.length) {
-        console.warn('⚠️ No games/apps found after parsing response')
-        return []
-      }
-
-      const mappedGames = apps.map((app: any) => ({
-        name: app.name || formatPackageName(app.packageName || app),
-        icon: '🎮',
-        category: 'Game',
-        packageName: app.packageName || app,
-        isInstalled: true,
-      }))
-
-      console.log(
-        `✅ Successfully scanned ${mappedGames.length} games/apps (POST devices/packages):`,
-        mappedGames.map((g: any) => g.name).join(', ')
-      )
-      return mappedGames
-    }
-
-    if (!result.apps || result.apps.length === 0) {
-      console.warn('⚠️ ADB server returned empty apps array')
-      console.log('Device might not have any games installed')
-      return []
-    }
-    
-    // Map game apps to expected format
-    const mappedGames = (result.apps || []).map((app: any) => ({
-      name: app.name || app.packageName,
-      icon: app.icon || "🎮",
-      category: app.category || "Game",
-      packageName: app.packageName,
-      isInstalled: true
+    return (result.apps || []).map((app: any) => ({
+      name: app.name || formatPackageName(app.packageName || app),
+      icon: app.icon || '🎮',
+      category: app.category || 'Game',
+      packageName: app.packageName || app,
+      isInstalled: true,
     }))
-    
-    console.log(`✅ Successfully scanned ${mappedGames.length} games:`, mappedGames.map(g => g.name).join(', '))
-    return mappedGames
   } catch (error) {
-    console.error('❌ Error scanning games:', error.message)
+    console.error('Scan error:', error)
     throw error
   }
 }
 
-// Launch a game on the device via ADB
 async function launchGameOnDevice(supabaseClient: any, device: any, packageName: string): Promise<{ success: boolean; message: string }> {
-  console.log(`🎮 Launching game ${packageName} on device ${device.name} (${device.device_id})`)
+  console.log(`🚀 Launching ${packageName} on device ${device.name} (${device.device_id})`)
   
   try {
     const adbServerUrl = await getAdbServerUrl(supabaseClient)
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     
-    // First verify ADB server is reachable
-    console.log('🔍 Checking ADB server health at:', baseUrl)
-    
+    // Verify ADB server is reachable
     try {
       const healthResponse = await fetch(`${baseUrl}/health`, {
         method: 'GET',
-        headers: { 
-          ...ngrokBypassHeaders,
-          'User-Agent': 'Lovable-Bot-Automation/1.0'
-        },
+        headers: { ...ngrokBypassHeaders, 'User-Agent': 'Lovable-Bot/1.0' },
         signal: AbortSignal.timeout(5000)
       })
       
       if (!healthResponse.ok) {
-        console.error('❌ ADB server health check failed:', healthResponse.status)
-        return { success: false, message: 'ADB server is not responding. Please check if it\'s running.' }
+        return { success: false, message: 'ADB server is not responding' }
       }
-      console.log('✅ ADB server is healthy')
     } catch (healthError) {
-      console.error('❌ Cannot reach ADB server:', healthError.message)
-      return { success: false, message: `Cannot reach ADB server at ${baseUrl}. Is ngrok running?` }
+      return { success: false, message: `Cannot reach ADB server at ${baseUrl}` }
     }
     
-    // Send open_app action to ADB server
+    // Send open_app action to ADB server with deviceId
     const actionPayload = {
       type: 'open_app',
       packageName: packageName,
-      deviceId: device.device_id
+      deviceId: device.device_id  // CRITICAL: Include hardware device ID
     }
     
-    console.log('📱 Sending launch command to ADB server:', actionPayload)
-    console.log('📍 POST URL:', `${baseUrl}/action`)
+    console.log('📱 Sending launch command:', actionPayload)
     
     const response = await fetch(`${baseUrl}/action`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         ...ngrokBypassHeaders,
-        'User-Agent': 'Lovable-Bot-Automation/1.0'
+        'User-Agent': 'Lovable-Bot/1.0'
       },
       body: JSON.stringify(actionPayload),
       signal: AbortSignal.timeout(15000)
     })
     
-    console.log('📬 Response status:', response.status)
-    
     if (!response.ok) {
       const errorText = await response.text()
       console.error('❌ Failed to launch game:', errorText)
-      return { success: false, message: `Failed to launch (${response.status}): ${errorText.substring(0, 200)}` }
+      return { success: false, message: `Failed to launch: ${errorText.substring(0, 200)}` }
     }
     
     const result = await response.json()
     console.log('✅ Game launched successfully:', result)
     
-    return { 
-      success: true, 
-      message: `${packageName} launched on ${device.name}` 
-    }
+    return { success: true, message: `${packageName} launched on ${device.name}` }
   } catch (error) {
     console.error('❌ Error launching game:', error)
     return { success: false, message: error.message }
   }
 }
 
-// Update device properties (name, etc.)
 async function updateDevice(supabaseClient: any, payload: { deviceId: string; updates: Record<string, any> }) {
-  console.log('Updating device:', payload)
-  
   const { deviceId, updates } = payload
   
   if (!deviceId) {
@@ -1076,7 +869,6 @@ async function updateDevice(supabaseClient: any, payload: { deviceId: string; up
     })
   }
   
-  // Only allow certain fields to be updated
   const allowedFields = ['name', 'adb_host', 'adb_port']
   const sanitizedUpdates: Record<string, any> = {}
   
@@ -1103,24 +895,64 @@ async function updateDevice(supabaseClient: any, payload: { deviceId: string; up
     .single()
   
   if (error) {
-    console.error('Failed to update device:', error)
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
   
-  console.log('Device updated successfully:', data)
   return new Response(JSON.stringify({ success: true, device: data }), {
     status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
 }
 
+// ============ AI VISION FUNCTIONS ============
+
+// Analyze screen using AI vision
+async function analyzeScreenWithAI(supabaseClient: any, deviceId: string, gameName: string) {
+  console.log(`🔬 Analyzing screen for ${gameName} on device ${deviceId}`)
+  
+  try {
+    const adbServerUrl = await getAdbServerUrl(supabaseClient)
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+    
+    // Take screenshot
+    const screenshot = await takeRealScreenshot(baseUrl, deviceId)
+    if (!screenshot) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Failed to capture screenshot' 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+    
+    // Analyze with AI
+    const analysis = await analyzeScreenWithGemini(screenshot, gameName)
+    
+    return new Response(JSON.stringify({ 
+      success: true,
+      analysis,
+      screenshotCaptured: true
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('Screen analysis error:', error)
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
 // ============ BOT AUTOMATION FUNCTIONS ============
 
-// Run bot automation loop - takes screenshots, analyzes, and performs actions
-async function runBotLoop(supabaseClient: any, sessionId: string, iterations: number = 1) {
+// Run bot automation loop with AI vision
+async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDeviceId: string | null, iterations: number = 1) {
   console.log(`🤖 Starting bot loop for session ${sessionId}, iterations: ${iterations}`)
   
   try {
@@ -1149,6 +981,10 @@ async function runBotLoop(supabaseClient: any, sessionId: string, iterations: nu
       throw new Error('Device is offline')
     }
     
+    // Use provided hardware ID or fall back to device.device_id
+    const deviceId = hardwareDeviceId || device.device_id
+    console.log(`📱 Using device ID for ADB: ${deviceId}`)
+    
     const adbServerUrl = await getAdbServerUrl(supabaseClient)
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
     
@@ -1159,14 +995,33 @@ async function runBotLoop(supabaseClient: any, sessionId: string, iterations: nu
       console.log(`🔄 Bot loop iteration ${i + 1}/${iterations}`)
       
       // 1. Take screenshot
-      const screenshot = await takeRealScreenshot(baseUrl, device.device_id)
+      const screenshot = await takeRealScreenshot(baseUrl, deviceId)
       
-      // 2. Analyze screenshot to find tap targets
-      const analysis = await analyzeScreenForActions(session.game_name, screenshot)
+      if (!screenshot) {
+        console.warn('⚠️ Failed to capture screenshot, skipping iteration')
+        continue
+      }
+      
+      // 2. Analyze screenshot with AI to find tile matches
+      let analysis
+      if (session.game_name.toLowerCase().includes('tile') || 
+          session.package_name.toLowerCase().includes('tilepark')) {
+        // Use AI vision for Tile Park
+        analysis = await analyzeScreenWithGemini(screenshot, session.game_name)
+      } else {
+        // Fallback to heuristic analysis
+        analysis = analyzeScreenHeuristic(session.game_name)
+      }
       
       // 3. Execute the recommended action
       if (analysis.action) {
-        const actionResult = await executeRealAction(baseUrl, analysis.action)
+        // Add deviceId to the action
+        const actionWithDevice = {
+          ...analysis.action,
+          deviceId: deviceId
+        }
+        
+        const actionResult = await executeRealAction(baseUrl, actionWithDevice)
         actionsPerformed++
         
         // Log the action
@@ -1190,7 +1045,7 @@ async function runBotLoop(supabaseClient: any, sessionId: string, iterations: nu
       
       // Small delay between iterations
       if (i < iterations - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise(resolve => setTimeout(resolve, 300))
       }
     }
     
@@ -1227,11 +1082,13 @@ async function runBotLoop(supabaseClient: any, sessionId: string, iterations: nu
 // Take a real screenshot from device
 async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<string> {
   try {
+    console.log(`📸 Taking screenshot from device: ${deviceId}`)
+    
     const response = await fetch(`${baseUrl}/screenshot`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        ...ngrokBypassHeaders
       },
       body: JSON.stringify({ deviceId }),
       signal: AbortSignal.timeout(10000)
@@ -1243,6 +1100,7 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
     }
     
     const result = await response.json()
+    console.log('📸 Screenshot captured successfully')
     return result.screenshot || ''
   } catch (error) {
     console.error('Screenshot error:', error)
@@ -1250,37 +1108,157 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
   }
 }
 
-// Analyze screenshot and determine next action - simple heuristics for now
-async function analyzeScreenForActions(gameName: string, screenshot: string): Promise<{
+// Analyze screenshot with Gemini AI for Tile Park game
+async function analyzeScreenWithGemini(screenshot: string, gameName: string): Promise<{
   action: DeviceAction | null
   description: string
+  tiles?: any[]
 }> {
-  // For now, use simple game-specific heuristics
-  // This can later be enhanced with real AI vision
+  console.log(`🧠 Analyzing ${gameName} screenshot with AI...`)
   
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+  
+  if (!LOVABLE_API_KEY) {
+    console.warn('⚠️ LOVABLE_API_KEY not configured, using heuristic analysis')
+    return analyzeScreenHeuristic(gameName)
+  }
+  
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a game automation assistant analyzing screenshots of the Tile Park game. 
+            
+The game shows a grid of tiles with fruit/vegetable icons (carrots, avocados, grapes, etc.). 
+The goal is to tap matching tiles to remove them.
+
+Analyze the screenshot and identify:
+1. The current game state (menu, playing, level complete, etc.)
+2. Visible tiles and their positions
+3. The best tile to tap next (prioritize matching pairs that are accessible)
+
+The screen is 720x1280 pixels. The game board is typically in the center.
+- The tile area is roughly x: 150-570, y: 400-800
+- Each tile is approximately 80-100 pixels wide
+
+Respond with JSON in this exact format:
+{
+  "gameState": "playing" | "menu" | "level_complete" | "game_over",
+  "action": {
+    "type": "tap",
+    "x": <number between 150-570>,
+    "y": <number between 400-800>,
+    "tileType": "carrot" | "avocado" | "grapes" | "unknown"
+  },
+  "description": "Brief description of what you see and why you chose this action",
+  "confidence": <0-1>
+}`
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Analyze this Tile Park game screenshot and tell me which tile to tap next.'
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: screenshot
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 500
+      }),
+      signal: AbortSignal.timeout(15000)
+    })
+    
+    if (!response.ok) {
+      console.error('AI analysis failed:', response.status, await response.text())
+      return analyzeScreenHeuristic(gameName)
+    }
+    
+    const result = await response.json()
+    const content = result.choices?.[0]?.message?.content || ''
+    
+    console.log('🧠 AI response:', content)
+    
+    // Parse JSON from response
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0])
+        
+        if (parsed.action && parsed.action.x && parsed.action.y) {
+          return {
+            action: {
+              type: 'tap',
+              coordinates: { 
+                x: Math.round(parsed.action.x), 
+                y: Math.round(parsed.action.y) 
+              }
+            },
+            description: parsed.description || `AI detected ${parsed.action.tileType || 'tile'} at (${parsed.action.x}, ${parsed.action.y})`
+          }
+        }
+      } catch (parseError) {
+        console.error('Failed to parse AI response JSON:', parseError)
+      }
+    }
+    
+    // If parsing failed, use heuristic
+    return analyzeScreenHeuristic(gameName)
+  } catch (error) {
+    console.error('AI analysis error:', error)
+    return analyzeScreenHeuristic(gameName)
+  }
+}
+
+// Heuristic-based screen analysis (fallback)
+function analyzeScreenHeuristic(gameName: string): {
+  action: DeviceAction | null
+  description: string
+} {
   const lowerGame = gameName.toLowerCase()
   
-  // Tile-matching games (Tilepark, etc.)
+  // Tile Park / Tile matching games
   if (lowerGame.includes('tile') || lowerGame.includes('match') || lowerGame.includes('puzzle')) {
-    // Random tap in the game area (center of screen)
-    const x = 200 + Math.floor(Math.random() * 400)  // 200-600
-    const y = 600 + Math.floor(Math.random() * 600)  // 600-1200 (game board area)
+    // Tile Park game board is typically centered
+    // Random tap in the game tile area (based on 720x1280 screen)
+    // Game area is approximately: x=150-570, y=400-800
+    const tilePositions = [
+      { x: 200, y: 450 }, { x: 290, y: 450 }, { x: 380, y: 450 }, { x: 470, y: 450 },
+      { x: 200, y: 530 }, { x: 290, y: 530 }, { x: 380, y: 530 }, { x: 470, y: 530 },
+      { x: 200, y: 610 }, { x: 290, y: 610 }, { x: 380, y: 610 }, { x: 470, y: 610 },
+      { x: 200, y: 690 }, { x: 290, y: 690 }, { x: 380, y: 690 }, { x: 470, y: 690 },
+    ]
+    
+    // Pick a random tile position
+    const pos = tilePositions[Math.floor(Math.random() * tilePositions.length)]
     
     return {
       action: {
         type: 'tap',
-        coordinates: { x, y }
+        coordinates: pos
       },
-      description: `Tapping tile at (${x}, ${y})`
+      description: `Tapping tile at (${pos.x}, ${pos.y})`
     }
   }
   
   // Pool/Billiard games
-  if (lowerGame.includes('pool') || lowerGame.includes('billiard') || lowerGame.includes('snooker')) {
-    // For pool games, we'd need to analyze ball positions
-    // For now, tap in play area
-    const x = 300 + Math.floor(Math.random() * 300)
-    const y = 800 + Math.floor(Math.random() * 400)
+  if (lowerGame.includes('pool') || lowerGame.includes('billiard')) {
+    const x = 300 + Math.floor(Math.random() * 120)
+    const y = 640 + Math.floor(Math.random() * 200)
     
     return {
       action: {
@@ -1291,11 +1269,11 @@ async function analyzeScreenForActions(gameName: string, screenshot: string): Pr
     }
   }
   
-  // Default: tap center of screen (for menus, "Play" buttons, etc.)
+  // Default: tap center (for menus, play buttons, etc.)
   return {
     action: {
       type: 'tap',
-      coordinates: { x: 540, y: 960 }  // Center of 1080x1920 screen
+      coordinates: { x: 360, y: 640 }
     },
     description: 'Tapping center of screen'
   }
@@ -1309,12 +1287,14 @@ async function executeRealAction(baseUrl: string, action: DeviceAction): Promise
   const startTime = Date.now()
   
   try {
+    console.log(`⚡ Executing action on device ${action.deviceId}:`, action.type, action.coordinates)
+    
     const response = await fetch(`${baseUrl}/action`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-        'User-Agent': 'Lovable-Bot-Automation/1.0'
+        ...ngrokBypassHeaders,
+        'User-Agent': 'Lovable-Bot/1.0'
       },
       body: JSON.stringify(action),
       signal: AbortSignal.timeout(5000)
@@ -1342,14 +1322,27 @@ async function executeTapAction(supabaseClient: any, deviceId: string, x: number
   console.log(`👆 Executing tap at (${x}, ${y}) on device ${deviceId}`)
   
   try {
-    // Get device info
-    const { data: device, error } = await supabaseClient
+    // Try to find device by UUID first, then by hardware ID
+    let device = null
+    
+    const { data: deviceById } = await supabaseClient
       .from('devices')
       .select('*')
       .eq('id', deviceId)
-      .single()
+      .maybeSingle()
     
-    if (error || !device) {
+    if (deviceById) {
+      device = deviceById
+    } else {
+      const { data: deviceByHwId } = await supabaseClient
+        .from('devices')
+        .select('*')
+        .eq('device_id', deviceId)
+        .maybeSingle()
+      device = deviceByHwId
+    }
+    
+    if (!device) {
       throw new Error('Device not found')
     }
     
@@ -1362,7 +1355,8 @@ async function executeTapAction(supabaseClient: any, deviceId: string, x: number
     
     const action: DeviceAction = {
       type: 'tap',
-      coordinates: { x, y }
+      coordinates: { x, y },
+      deviceId: device.device_id  // Use hardware device ID
     }
     
     const result = await executeRealAction(baseUrl, action)

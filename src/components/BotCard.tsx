@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Settings, TrendingUp } from "lucide-react";
+import { Play, Square, Settings, TrendingUp, Smartphone } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -30,6 +30,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
   const [isLaunching, setIsLaunching] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [actionsCount, setActionsCount] = useState(0);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [hardwareDeviceId, setHardwareDeviceId] = useState<string | null>(null);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Cleanup on unmount
@@ -59,6 +61,126 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
     }
   };
 
+  const startBotLoop = async (sessionId: string, deviceId: string) => {
+    console.log(`🤖 Starting bot loop for session ${sessionId} on device ${deviceId}`);
+    
+    const runLoop = async () => {
+      try {
+        const { data: loopData, error: loopError } = await supabase.functions.invoke('device-automation', {
+          body: {
+            action: 'run_bot_loop',
+            payload: {
+              sessionId: sessionId,
+              deviceId: deviceId,  // Pass hardware device ID
+              iterations: 3
+            }
+          }
+        });
+
+        if (loopError) {
+          console.error('Bot loop error:', loopError);
+          return;
+        }
+        
+        if (loopData?.success) {
+          setActionsCount(loopData.totalActions || 0);
+          console.log(`✅ Bot loop completed: ${loopData.actionsPerformed} actions`);
+        } else if (loopData?.error) {
+          console.error('Bot loop failed:', loopData.error);
+          toast.error(`Bot error: ${loopData.error}`);
+        }
+      } catch (err) {
+        console.error('Bot loop exception:', err);
+      }
+    };
+
+    // Run immediately
+    await runLoop();
+    
+    // Then run every 2 seconds
+    playIntervalRef.current = setInterval(runLoop, 2000);
+  };
+
+  const stopBot = () => {
+    if (playIntervalRef.current) {
+      clearInterval(playIntervalRef.current);
+      playIntervalRef.current = null;
+    }
+    setIsPlaying(false);
+    setCurrentSessionId(null);
+    onStatusChange(game.id, "stopped");
+    toast.info(`⏹️ Bot stopped playing ${game.name}`);
+  };
+
+  const handlePlayNow = async () => {
+    // Validate required fields
+    if (!game.deviceId) {
+      toast.error('No device connected. Please connect a device first.');
+      return;
+    }
+    
+    if (!game.packageName) {
+      toast.error('Game package name not found.');
+      return;
+    }
+
+    // Set status to active
+    onStatusChange(game.id, "active");
+    setIsLaunching(true);
+    
+    console.log(`🎮 Launching ${game.name} on device ${game.deviceId} with package ${game.packageName}`);
+    toast.loading(`🚀 Launching ${game.name} on device...`, { id: 'launch-game' });
+
+    try {
+      const { data, error } = await supabase.functions.invoke('device-automation', {
+        body: {
+          action: 'start_bot_session',
+          payload: {
+            deviceId: game.deviceId,  // Hardware device ID (e.g., 330021a82ec4c231)
+            gameName: game.name,
+            packageName: game.packageName,
+            config: {},
+          }
+        }
+      });
+      
+      console.log('🎮 Launch response:', data);
+
+      if (error) {
+        throw error;
+      }
+
+      if (data.success && data.launched) {
+        toast.success(`🎮 ${game.name} launched! Starting bot in 3 seconds...`, { id: 'launch-game', duration: 3000 });
+        
+        // Store session info
+        const sessionId = data.session?.id;
+        const hwDeviceId = data.hardwareDeviceId || game.deviceId;
+        
+        setCurrentSessionId(sessionId);
+        setHardwareDeviceId(hwDeviceId);
+        
+        // Auto-start the bot after delay for game to load
+        setTimeout(() => {
+          if (sessionId) {
+            setIsPlaying(true);
+            toast.success(`🤖 Bot is now playing ${game.name}!`, { duration: 3000 });
+            startBotLoop(sessionId, hwDeviceId);
+          }
+        }, 3000);
+      } else {
+        const errorMsg = data.launchMessage || data.error || 'Unknown error';
+        toast.error(`Failed to launch: ${errorMsg}`, { id: 'launch-game' });
+        onStatusChange(game.id, "stopped");
+      }
+    } catch (error) {
+      console.error('Launch error:', error);
+      toast.error(`Launch failed: ${error}`, { id: 'launch-game' });
+      onStatusChange(game.id, "stopped");
+    } finally {
+      setIsLaunching(false);
+    }
+  };
 
   return (
     <Card 
@@ -75,15 +197,23 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
               <h3 className="font-bold text-lg text-glow">{game.name}</h3>
               <p className="text-sm text-muted-foreground">{game.category}</p>
               {game.packageName && (
-                <p className="text-xs text-muted-foreground/60 font-mono">{game.packageName}</p>
+                <p className="text-xs text-muted-foreground/60 font-mono truncate max-w-[180px]">{game.packageName}</p>
               )}
             </div>
           </div>
-          <Badge 
-            className={`${getStatusColor(game.status)} text-gaming-bg border-0 animate-pulse-glow`}
-          >
-            {getStatusText(game.status)}
-          </Badge>
+          <div className="flex flex-col items-end gap-1">
+            <Badge 
+              className={`${getStatusColor(game.status)} text-gaming-bg border-0 animate-pulse-glow`}
+            >
+              {getStatusText(game.status)}
+            </Badge>
+            {game.deviceId && (
+              <Badge variant="outline" className="text-xs flex items-center gap-1">
+                <Smartphone className="w-3 h-3" />
+                <span className="truncate max-w-[80px]">{game.deviceId.substring(0, 8)}...</span>
+              </Badge>
+            )}
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -105,8 +235,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
               <p className="text-xs text-muted-foreground">Coins</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-neon-pink">{game.hourlyRate}</p>
-              <p className="text-xs text-muted-foreground">Per Hour</p>
+              <p className="text-2xl font-bold text-neon-pink">{actionsCount > 0 ? actionsCount : game.hourlyRate}</p>
+              <p className="text-xs text-muted-foreground">{actionsCount > 0 ? 'Actions' : 'Per Hour'}</p>
             </div>
           </div>
 
@@ -117,79 +247,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={async () => {
-                    // Set status to active
-                    onStatusChange(game.id, "active");
-                    
-                    // Launch game on device
-                    if (game.deviceId && game.packageName) {
-                      setIsLaunching(true);
-                      console.log(`🎮 Launching ${game.name} on device ${game.deviceId} with package ${game.packageName}`);
-                      toast.loading(`🚀 Launching ${game.name} on device ${game.deviceId}...`, { id: 'launch-game' });
-
-                      try {
-                        const { data, error } = await supabase.functions.invoke('device-automation', {
-                          body: {
-                            action: 'start_bot_session',
-                            payload: {
-                              deviceId: game.deviceId,  // This is now the hardware ID (e.g., 330021a82ec4c231)
-                              gameName: game.name,
-                              packageName: game.packageName,
-                              config: {},
-                            }
-                          }
-                        });
-                        
-                        console.log('🎮 Launch response:', data);
-
-                        if (error) throw error;
-
-                        if (data.success && data.launched) {
-                          toast.success(`🎮 ${game.name} launched! Starting bot...`, { id: 'launch-game', duration: 3000 });
-                          
-                          // Auto-start the bot after a short delay to let the game load
-                          setTimeout(() => {
-                            if (data.session?.id) {
-                              setIsPlaying(true);
-                              toast.success(`🤖 Bot is now playing ${game.name}!`, { duration: 3000 });
-                              
-                              // Run bot loop every 2 seconds
-                              const runLoop = async () => {
-                                try {
-                                  const { data: loopData, error: loopError } = await supabase.functions.invoke('device-automation', {
-                                    body: {
-                                      action: 'run_bot_loop',
-                                      payload: {
-                                        sessionId: data.session.id,
-                                        iterations: 3
-                                      }
-                                    }
-                                  });
-
-                                  if (!loopError && loopData?.success) {
-                                    setActionsCount(loopData.totalActions || 0);
-                                  }
-                                } catch (err) {
-                                  console.error('Bot loop error:', err);
-                                }
-                              };
-
-                              runLoop();
-                              playIntervalRef.current = setInterval(runLoop, 2000);
-                            }
-                          }, 3000); // Wait 3s for game to load
-                        } else {
-                          toast.error(`Failed to launch: ${data.launchMessage || data.error || 'Unknown error'}`, { id: 'launch-game' });
-                        }
-                      } catch (error) {
-                        console.error('Launch error:', error);
-                        toast.error(`Launch failed: ${error}`, { id: 'launch-game' });
-                      } finally {
-                        setIsLaunching(false);
-                      }
-                    }
-                  }}
-                  disabled={isLaunching}
+                  onClick={handlePlayNow}
+                  disabled={isLaunching || !game.deviceId}
                   className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg border-0 font-bold"
                 >
                   <Play className={`w-4 h-4 mr-1 ${isLaunching ? 'animate-spin' : ''}`} />
@@ -199,15 +258,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => {
-                    if (playIntervalRef.current) {
-                      clearInterval(playIntervalRef.current);
-                      playIntervalRef.current = null;
-                    }
-                    setIsPlaying(false);
-                    onStatusChange(game.id, "stopped");
-                    toast.info(`⏹️ Bot stopped playing ${game.name}`);
-                  }}
+                  onClick={stopBot}
                   className="flex-1 animate-pulse"
                 >
                   <Square className="w-4 h-4 mr-1" />
@@ -219,6 +270,12 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
                 <Settings className="w-4 h-4" />
               </Button>
             </div>
+            
+            {!game.deviceId && (
+              <p className="text-xs text-destructive text-center">
+                No device connected. Scan games from a connected device.
+              </p>
+            )}
           </div>
         </div>
       </div>
