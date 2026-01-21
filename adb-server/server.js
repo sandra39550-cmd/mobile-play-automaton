@@ -133,9 +133,7 @@ app.post('/action', async (req, res) => {
 });
 
 // Take screenshot
-app.post('/screenshot', async (req, res) => {
-  const { deviceId } = req.body;
-
+async function handleScreenshotRequest(deviceId, res) {
   console.log('Taking screenshot for device:', deviceId);
 
   try {
@@ -170,6 +168,18 @@ app.post('/screenshot', async (req, res) => {
       error: error.message
     });
   }
+}
+
+// POST version (preferred)
+app.post('/screenshot', async (req, res) => {
+  const { deviceId } = req.body || {};
+  return handleScreenshotRequest(deviceId, res);
+});
+
+// GET fallback (helps when proxies/tunnels don’t POST)
+app.get('/screenshot', async (req, res) => {
+  const { deviceId } = req.query || {};
+  return handleScreenshotRequest(deviceId, res);
 });
 
 // Strict game detection - only matches actual games visible in launcher
