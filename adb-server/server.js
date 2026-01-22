@@ -73,7 +73,10 @@ app.get('/devices', async (req, res) => {
 app.post('/action', async (req, res) => {
   const { type, coordinates, packageName, swipeDirection, duration, deviceId } = req.body;
 
-  console.log('Executing action:', type, req.body);
+  console.log('========================================');
+  console.log('🎯 ACTION RECEIVED:', type);
+  console.log('📦 Full payload:', JSON.stringify(req.body, null, 2));
+  console.log('========================================');
 
   try {
     // If a specific deviceId is provided, target it explicitly with `adb -s`.
@@ -111,12 +114,17 @@ app.post('/action', async (req, res) => {
         break;
 
       default:
+        console.log('❌ Unknown action type:', type);
         return res.status(400).json({ success: false, error: 'Unknown action type' });
     }
 
+    console.log('🔧 Executing command:', command);
+    
     const { stdout, stderr } = await execPromise(command);
 
-    console.log('Action result:', stdout || 'success');
+    console.log('✅ Command stdout:', stdout || '(empty)');
+    if (stderr) console.log('⚠️ Command stderr:', stderr);
+    console.log('========================================');
 
     res.json({
       success: true,
@@ -124,7 +132,9 @@ app.post('/action', async (req, res) => {
       error: stderr
     });
   } catch (error) {
-    console.error('Action error:', error);
+    console.error('❌ ACTION ERROR:', error.message);
+    console.error('Full error:', error);
+    console.log('========================================');
     res.status(500).json({
       success: false,
       error: error.message
