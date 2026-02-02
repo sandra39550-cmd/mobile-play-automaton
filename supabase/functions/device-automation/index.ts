@@ -168,6 +168,16 @@ function formatPackageName(pkg: string): string {
     .join(' ')
 }
 
+function normalizePackageName(pkg: string | undefined | null): string {
+  const raw = (pkg || '').trim()
+  if (!raw) return raw
+
+  // Fix legacy/incorrect identifiers used in older UI/configs
+  if (raw === 'funvent.tilepark') return 'com.funvent.tilepark'
+
+  return raw
+}
+
 // Get ADB server URL from database (auto-detected) or fallback to env var
 async function getAdbServerUrl(supabaseClient: any): Promise<string> {
   try {
@@ -346,6 +356,8 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
 
 async function startBotSession(supabaseClient: any, userId: string, sessionData: any) {
   console.log('Starting bot session:', sessionData)
+
+  const normalizedPackageName = normalizePackageName(sessionData.packageName)
   
   let device = null
   let deviceError = null
@@ -387,7 +399,7 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
       user_id: userId,
       device_id: device.id,
       game_name: sessionData.gameName,
-      package_name: sessionData.packageName,
+      package_name: normalizedPackageName,
       status: 'running',
       config: sessionData.config || {}
     })
@@ -397,7 +409,7 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
   if (error) throw error
 
   // Launch the game on the device - pass hardware device_id
-  const launchResult = await launchGameOnDevice(supabaseClient, device, sessionData.packageName)
+  const launchResult = await launchGameOnDevice(supabaseClient, device, normalizedPackageName)
   
   console.log('Game launch result:', launchResult)
 
