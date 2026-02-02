@@ -53,7 +53,7 @@ const KNOWN_GAME_PACKAGES = [
   'com.pubg',
   'com.activision.callofduty',
   'com.roblox.client',
-  'funvent.tilepark', // Tile Park specific
+  'com.funvent.tilepark', // Tile Park specific
 ]
 
 // Package name patterns that indicate games

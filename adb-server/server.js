@@ -195,7 +195,7 @@ app.get('/screenshot', async (req, res) => {
 // Strict game detection - only matches actual games visible in launcher
 const KNOWN_GAME_PACKAGES = [
   // Your specific games
-  'tilepark', 'poolbilliard', 'pool.billiard', 'billiard',
+  'com.funvent.tilepark', 'tilepark', 'poolbilliard', 'pool.billiard', 'billiard',
   // Major game publishers
   'com.king.', 'com.supercell.', 'com.rovio.', 'com.gameloft.',
   'com.ea.game', 'com.zynga.', 'com.outfit7.', 'com.halfbrick.',
