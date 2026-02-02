@@ -862,9 +862,22 @@ async function launchGameOnDevice(supabaseClient: any, device: any, packageName:
     }
     
     const result = await response.json()
-    console.log('✅ Game launched successfully:', result)
-    
-    return { success: true, message: `${packageName} launched on ${device.name}` }
+    console.log('📨 ADB server /action response:', result)
+
+    // The bridge returns { success, error, result, message, launched?, pid? }
+    if (!result?.success) {
+      const bridgeMsg = result?.message || result?.error || result?.result || 'ADB bridge reported failure'
+      return { success: false, message: `Failed to launch: ${bridgeMsg}` }
+    }
+
+    // If bridge could verify launch, respect it.
+    if (result?.launched === false) {
+      const bridgeMsg = result?.message || result?.result || 'App did not start'
+      return { success: false, message: `Failed to launch: ${bridgeMsg}` }
+    }
+
+    const okMsg = result?.message || `${packageName} launch command sent to ${device.name}`
+    return { success: true, message: okMsg }
   } catch (error) {
     console.error('❌ Error launching game:', error)
     return { success: false, message: error.message }

@@ -78,7 +78,7 @@ app.post('/action', async (req, res) => {
   console.log('📦 Full payload:', JSON.stringify(req.body, null, 2));
   console.log('========================================');
 
-  try {
+    try {
     // If a specific deviceId is provided, target it explicitly with `adb -s`.
     // This is critical when multiple devices/emulators are connected.
     const adbPrefix = deviceId ? `adb -s ${deviceId}` : 'adb';
@@ -102,8 +102,11 @@ app.post('/action', async (req, res) => {
         break;
 
       case 'open_app':
-        command = `${adbPrefix} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
-        break;
+        {
+          // Launch via monkey
+          command = `${adbPrefix} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
+          break;
+        }
 
       case 'close_app':
         command = `${adbPrefix} shell am force-stop ${packageName}`;
@@ -124,12 +127,57 @@ app.post('/action', async (req, res) => {
 
     console.log('✅ Command stdout:', stdout || '(empty)');
     if (stderr) console.log('⚠️ Command stderr:', stderr);
+
+    // Extra verification for app launch: confirm process is running.
+    if (type === 'open_app' && packageName) {
+      // give Android a moment to spin up the process
+      await new Promise((r) => setTimeout(r, 1200));
+
+      try {
+        const { stdout: pidStdout } = await execPromise(`${adbPrefix} shell pidof ${packageName}`);
+        const pid = (pidStdout || '').trim();
+
+        if (!pid) {
+          console.log('❌ Launch verification failed: pidof returned empty');
+          console.log('========================================');
+          return res.json({
+            success: false,
+            result: stdout || 'monkey executed',
+            error: (stderr || '').trim() || null,
+            launched: false,
+            message: `App did not start (pidof empty) for ${packageName}`
+          });
+        }
+
+        console.log(`✅ Launch verified: pidof=${pid}`);
+        console.log('========================================');
+        return res.json({
+          success: true,
+          result: stdout || 'monkey executed',
+          error: (stderr || '').trim() || null,
+          launched: true,
+          pid,
+          message: `Launched ${packageName} (pid ${pid})`
+        });
+      } catch (verifyErr) {
+        console.error('⚠️ Launch verification error:', verifyErr.message);
+        console.log('========================================');
+        return res.json({
+          success: true,
+          result: stdout || 'monkey executed',
+          error: (stderr || '').trim() || null,
+          launched: null,
+          message: `Launch command sent, but verification failed: ${verifyErr.message}`
+        });
+      }
+    }
+
     console.log('========================================');
 
     res.json({
       success: true,
       result: stdout || `${type} executed successfully`,
-      error: stderr
+      error: (stderr || '').trim() || null
     });
   } catch (error) {
     console.error('❌ ACTION ERROR:', error.message);
