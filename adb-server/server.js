@@ -85,6 +85,8 @@ app.post('/action', async (req, res) => {
 
     let command = '';
 
+    console.log('🔍 Building command for type:', type, '| deviceId:', deviceId, '| packageName:', packageName);
+    
     switch (type) {
       case 'tap':
         command = `${adbPrefix} shell input tap ${coordinates.x} ${coordinates.y}`;
@@ -103,6 +105,7 @@ app.post('/action', async (req, res) => {
 
       case 'open_app':
         command = `${adbPrefix} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
+        console.log('📱 open_app case matched, command:', command);
         break;
 
       case 'close_app':
@@ -116,6 +119,11 @@ app.post('/action', async (req, res) => {
       default:
         console.log('❌ Unknown action type:', type);
         return res.status(400).json({ success: false, error: 'Unknown action type' });
+    }
+
+    if (!command) {
+      console.log('❌ No command built!');
+      return res.status(400).json({ success: false, error: 'No command built for action' });
     }
 
     console.log('🔧 Executing command:', command);
