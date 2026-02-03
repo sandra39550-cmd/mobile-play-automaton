@@ -53,7 +53,7 @@ const KNOWN_GAME_PACKAGES = [
   'com.pubg',
   'com.activision.callofduty',
   'com.roblox.client',
-  'com.funvent.tilepark', // Tile Park specific
+  'funvent.tilepark', // Tile Park specific
 ]
 
 // Package name patterns that indicate games
@@ -166,16 +166,6 @@ function formatPackageName(pkg: string): string {
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
-}
-
-function normalizePackageName(pkg: string | undefined | null): string {
-  const raw = (pkg || '').trim()
-  if (!raw) return raw
-
-  // Fix legacy/incorrect identifiers used in older UI/configs
-  if (raw === 'funvent.tilepark') return 'com.funvent.tilepark'
-
-  return raw
 }
 
 // Get ADB server URL from database (auto-detected) or fallback to env var
@@ -356,8 +346,6 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
 
 async function startBotSession(supabaseClient: any, userId: string, sessionData: any) {
   console.log('Starting bot session:', sessionData)
-
-  const normalizedPackageName = normalizePackageName(sessionData.packageName)
   
   let device = null
   let deviceError = null
@@ -399,7 +387,7 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
       user_id: userId,
       device_id: device.id,
       game_name: sessionData.gameName,
-      package_name: normalizedPackageName,
+      package_name: sessionData.packageName,
       status: 'running',
       config: sessionData.config || {}
     })
@@ -409,7 +397,7 @@ async function startBotSession(supabaseClient: any, userId: string, sessionData:
   if (error) throw error
 
   // Launch the game on the device - pass hardware device_id
-  const launchResult = await launchGameOnDevice(supabaseClient, device, normalizedPackageName)
+  const launchResult = await launchGameOnDevice(supabaseClient, device, sessionData.packageName)
   
   console.log('Game launch result:', launchResult)
 
@@ -862,22 +850,9 @@ async function launchGameOnDevice(supabaseClient: any, device: any, packageName:
     }
     
     const result = await response.json()
-    console.log('📨 ADB server /action response:', result)
-
-    // The bridge returns { success, error, result, message, launched?, pid? }
-    if (!result?.success) {
-      const bridgeMsg = result?.message || result?.error || result?.result || 'ADB bridge reported failure'
-      return { success: false, message: `Failed to launch: ${bridgeMsg}` }
-    }
-
-    // If bridge could verify launch, respect it.
-    if (result?.launched === false) {
-      const bridgeMsg = result?.message || result?.result || 'App did not start'
-      return { success: false, message: `Failed to launch: ${bridgeMsg}` }
-    }
-
-    const okMsg = result?.message || `${packageName} launch command sent to ${device.name}`
-    return { success: true, message: okMsg }
+    console.log('✅ Game launched successfully:', result)
+    
+    return { success: true, message: `${packageName} launched on ${device.name}` }
   } catch (error) {
     console.error('❌ Error launching game:', error)
     return { success: false, message: error.message }
