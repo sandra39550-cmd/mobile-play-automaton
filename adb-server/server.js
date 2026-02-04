@@ -20,7 +20,8 @@ const UPDATE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/upda
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'ADB HTTP Server is running' });
+  console.log('🏥 Health check requested');
+  res.json({ status: 'ok', message: 'ADB HTTP Server is running', timestamp: new Date().toISOString() });
 });
 
 // Connect to device via WiFi
@@ -51,20 +52,31 @@ app.post('/connect', async (req, res) => {
 
 // List connected devices
 app.get('/devices', async (req, res) => {
+  console.log('📱 Listing devices...');
   try {
     const { stdout } = await execPromise('adb devices -l');
     const lines = stdout.split('\n').filter(line => line.trim() && !line.includes('List of devices'));
     
     const devices = lines.map(line => {
       const parts = line.split(/\s+/);
-      return {
+      const device = {
         id: parts[0],
         status: parts[1]
       };
-    });
+      
+      // Extract model name if available
+      const modelMatch = line.match(/model:(\S+)/);
+      if (modelMatch) {
+        device.model = modelMatch[1];
+      }
+      
+      return device;
+    }).filter(d => d.id && d.status);
     
+    console.log('📱 Found devices:', devices);
     res.json({ success: true, devices });
   } catch (error) {
+    console.error('Device listing error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -80,7 +92,6 @@ app.post('/action', async (req, res) => {
 
   try {
     // If a specific deviceId is provided, target it explicitly with `adb -s`.
-    // This is critical when multiple devices/emulators are connected.
     const adbPrefix = deviceId ? `adb -s ${deviceId}` : 'adb';
 
     let command = '';
@@ -89,7 +100,11 @@ app.post('/action', async (req, res) => {
     
     switch (type) {
       case 'tap':
+        if (!coordinates || typeof coordinates.x !== 'number' || typeof coordinates.y !== 'number') {
+          return res.status(400).json({ success: false, error: 'Invalid tap coordinates' });
+        }
         command = `${adbPrefix} shell input tap ${coordinates.x} ${coordinates.y}`;
+        console.log('👆 tap case matched, command:', command);
         break;
 
       case 'swipe':
@@ -101,24 +116,33 @@ app.post('/action', async (req, res) => {
         };
         const swipeCoords = directions[swipeDirection] || directions.up;
         command = `${adbPrefix} shell input swipe ${swipeCoords} ${duration || 300}`;
+        console.log('👋 swipe case matched, command:', command);
         break;
 
       case 'open_app':
+        if (!packageName) {
+          return res.status(400).json({ success: false, error: 'Package name required for open_app' });
+        }
         command = `${adbPrefix} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
         console.log('📱 open_app case matched, command:', command);
         break;
 
       case 'close_app':
+        if (!packageName) {
+          return res.status(400).json({ success: false, error: 'Package name required for close_app' });
+        }
         command = `${adbPrefix} shell am force-stop ${packageName}`;
+        console.log('🛑 close_app case matched, command:', command);
         break;
 
       case 'screenshot':
         command = `${adbPrefix} shell screencap -p /sdcard/screenshot.png`;
+        console.log('📸 screenshot case matched, command:', command);
         break;
 
       default:
         console.log('❌ Unknown action type:', type);
-        return res.status(400).json({ success: false, error: 'Unknown action type' });
+        return res.status(400).json({ success: false, error: `Unknown action type: ${type}` });
     }
 
     if (!command) {
@@ -150,37 +174,57 @@ app.post('/action', async (req, res) => {
   }
 });
 
-// Take screenshot
+// Take screenshot - shared handler
 async function handleScreenshotRequest(deviceId, res) {
-  console.log('Taking screenshot for device:', deviceId);
+  console.log('========================================');
+  console.log('📸 SCREENSHOT REQUEST');
+  console.log('📱 Device ID:', deviceId || '(default - first device)');
+  console.log('========================================');
 
   try {
     const adbPrefix = deviceId ? `adb -s ${deviceId}` : 'adb';
 
-    // Take screenshot on device
-    await execPromise(`${adbPrefix} shell screencap -p /sdcard/screenshot.png`);
+    // Step 1: Take screenshot on device
+    console.log('📸 Step 1: Taking screenshot on device...');
+    const screencapCmd = `${adbPrefix} shell screencap -p /sdcard/screenshot.png`;
+    console.log('🔧 Command:', screencapCmd);
+    await execPromise(screencapCmd);
+    console.log('✅ Screenshot captured on device');
 
-    // Pull screenshot to server
+    // Step 2: Pull screenshot to server
+    console.log('📸 Step 2: Pulling screenshot to server...');
     const timestamp = Date.now();
     const localPath = path.join(__dirname, `screenshot_${timestamp}.png`);
-    await execPromise(`${adbPrefix} pull /sdcard/screenshot.png ${localPath}`);
+    const pullCmd = `${adbPrefix} pull /sdcard/screenshot.png ${localPath}`;
+    console.log('🔧 Command:', pullCmd);
+    await execPromise(pullCmd);
+    console.log('✅ Screenshot pulled to:', localPath);
 
-    // Read and convert to base64
+    // Step 3: Read and convert to base64
+    console.log('📸 Step 3: Converting to base64...');
     const imageBuffer = fs.readFileSync(localPath);
     const base64Image = `data:image/png;base64,${imageBuffer.toString('base64')}`;
+    console.log('✅ Base64 size:', Math.round(base64Image.length / 1024), 'KB');
 
-    // Cleanup
+    // Step 4: Cleanup
+    console.log('📸 Step 4: Cleaning up...');
     fs.unlinkSync(localPath);
     await execPromise(`${adbPrefix} shell rm /sdcard/screenshot.png`);
+    console.log('✅ Cleanup complete');
 
-    console.log('Screenshot captured successfully');
+    console.log('========================================');
+    console.log('✅ SCREENSHOT SUCCESS');
+    console.log('========================================');
 
     res.json({
       success: true,
       screenshot: base64Image
     });
   } catch (error) {
-    console.error('Screenshot error:', error);
+    console.error('========================================');
+    console.error('❌ SCREENSHOT ERROR:', error.message);
+    console.error('Full error:', error);
+    console.error('========================================');
     res.status(500).json({
       success: false,
       error: error.message
@@ -190,21 +234,21 @@ async function handleScreenshotRequest(deviceId, res) {
 
 // POST version (preferred)
 app.post('/screenshot', async (req, res) => {
+  console.log('📸 Screenshot request via POST');
   const { deviceId } = req.body || {};
   return handleScreenshotRequest(deviceId, res);
 });
 
-// GET fallback (helps when proxies/tunnels don’t POST)
+// GET fallback (helps when proxies/tunnels don't POST)
 app.get('/screenshot', async (req, res) => {
+  console.log('📸 Screenshot request via GET');
   const { deviceId } = req.query || {};
   return handleScreenshotRequest(deviceId, res);
 });
 
 // Strict game detection - only matches actual games visible in launcher
 const KNOWN_GAME_PACKAGES = [
-  // Your specific games
   'tilepark', 'poolbilliard', 'pool.billiard', 'billiard',
-  // Major game publishers
   'com.king.', 'com.supercell.', 'com.rovio.', 'com.gameloft.',
   'com.ea.game', 'com.zynga.', 'com.outfit7.', 'com.halfbrick.',
   'com.mojang.', 'com.kiloo.', 'com.nekki.', 'com.fingersoft.',
@@ -214,7 +258,7 @@ const KNOWN_GAME_PACKAGES = [
   'com.azurgames.', 'com.crazylabs.', 'com.ludo.', 'me.pou.'
 ];
 
-// Packages to explicitly exclude (system/utility apps that might match patterns)
+// Packages to explicitly exclude
 const EXCLUDED_PACKAGES = [
   'com.android', 'com.google', 'com.samsung', 'com.sec.',
   'com.microsoft', 'com.facebook.katana', 'com.whatsapp',
@@ -229,17 +273,14 @@ const EXCLUDED_PACKAGES = [
 function isGamePackage(pkg) {
   const lowerPkg = pkg.toLowerCase();
   
-  // First, exclude known non-game packages
   if (EXCLUDED_PACKAGES.some(ex => lowerPkg.includes(ex))) {
     return false;
   }
   
-  // Check if it matches known game packages/patterns
   if (KNOWN_GAME_PACKAGES.some(known => lowerPkg.includes(known.toLowerCase()))) {
     return true;
   }
   
-  // Only match very specific game-related terms that are unlikely to be system apps
   const strictGameTerms = [
     /\.game\./i, /\.games\./i, /puzzle/i, /arcade/i,
     /candy/i, /crush/i, /clash/i, /craft/i, /quest/i,
@@ -257,26 +298,28 @@ function isGamePackage(pkg) {
 
 // Scan installed apps (games only)
 async function handleScanApps(deviceId, category) {
-  // List third-party packages (non-system apps)
-  const { stdout } = await execPromise('adb shell pm list packages -3');
+  console.log('========================================');
+  console.log('🔍 SCANNING APPS');
+  console.log('📱 Device ID:', deviceId || '(default)');
+  console.log('========================================');
+
+  const adbPrefix = deviceId ? `adb -s ${deviceId}` : 'adb';
+  const { stdout } = await execPromise(`${adbPrefix} shell pm list packages -3`);
 
   const packages = stdout
     .split('\n')
     .map((line) => line.replace('package:', '').trim())
     .filter((pkg) => pkg);
 
-  console.log(`Found ${packages.length} third-party packages, filtering for games...`);
-  console.log('All packages:', packages.join(', '));
+  console.log(`Found ${packages.length} third-party packages`);
 
   const apps = [];
   for (const pkg of packages) {
-    // Only include actual games
     if (!isGamePackage(pkg)) {
-      console.log(`Skipping non-game: ${pkg}`);
       continue;
     }
 
-    console.log(`Including game: ${pkg}`);
+    console.log(`✅ Including game: ${pkg}`);
     const name = pkg.split('.').pop().replace(/([A-Z])/g, ' $1').trim() || pkg;
 
     apps.push({
@@ -287,62 +330,46 @@ async function handleScanApps(deviceId, category) {
     });
   }
 
-  console.log(`Found ${apps.length} games after strict filtering:`, apps.map(a => a.name).join(', '));
+  console.log(`Found ${apps.length} games`);
+  console.log('========================================');
   return apps;
 }
 
-// POST version (preferred)
+// POST version
 app.post('/scan-apps', async (req, res) => {
   const { deviceId, category } = req.body || {};
-
   console.log('Scanning apps on device (POST):', deviceId);
-
   try {
     const apps = await handleScanApps(deviceId, category);
-
-    res.json({
-      success: true,
-      apps,
-    });
+    res.json({ success: true, apps });
   } catch (error) {
     console.error('Scan error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// GET fallback (helps when proxies/clients can’t POST)
+// GET fallback
 app.get('/scan-apps', async (req, res) => {
   const { deviceId, category } = req.query || {};
-
   console.log('Scanning apps on device (GET):', deviceId);
-
   try {
     const apps = await handleScanApps(deviceId, category);
-
-    res.json({
-      success: true,
-      apps,
-    });
+    res.json({ success: true, apps });
   } catch (error) {
     console.error('Scan error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Get device info
 app.post('/device-info', async (req, res) => {
   const { deviceId } = req.body;
+  const adbPrefix = deviceId ? `adb -s ${deviceId}` : 'adb';
   
   try {
-    const { stdout: model } = await execPromise('adb shell getprop ro.product.model');
-    const { stdout: version } = await execPromise('adb shell getprop ro.build.version.release');
-    const { stdout: size } = await execPromise('adb shell wm size');
+    const { stdout: model } = await execPromise(`${adbPrefix} shell getprop ro.product.model`);
+    const { stdout: version } = await execPromise(`${adbPrefix} shell getprop ro.build.version.release`);
+    const { stdout: size } = await execPromise(`${adbPrefix} shell wm size`);
     
     const screenMatch = size.match(/Physical size: (\d+)x(\d+)/);
     
@@ -389,7 +416,6 @@ async function detectNgrokUrl() {
     });
     
     req.on('error', () => {
-      // Silently fail if ngrok not running
       resolve(null);
     });
     
@@ -448,8 +474,15 @@ async function checkAndReportNgrok() {
 }
 
 app.listen(PORT, async () => {
-  console.log(`🚀 ADB HTTP Server running on http://localhost:${PORT}`);
-  console.log(`   Health check: http://localhost:${PORT}/health`);
+  console.log('');
+  console.log('========================================');
+  console.log('🚀 ADB HTTP Server v2.0');
+  console.log('========================================');
+  console.log(`📍 Running on: http://localhost:${PORT}`);
+  console.log(`🏥 Health: http://localhost:${PORT}/health`);
+  console.log(`📱 Devices: http://localhost:${PORT}/devices`);
+  console.log(`📸 Screenshot: POST/GET http://localhost:${PORT}/screenshot`);
+  console.log(`🎯 Actions: POST http://localhost:${PORT}/action`);
   console.log('');
   
   // Check for ngrok on startup
@@ -464,9 +497,9 @@ app.listen(PORT, async () => {
   }
   
   console.log('');
-  console.log('🔄 Monitoring for ngrok tunnel changes every 30s...');
+  console.log('🔄 Monitoring for ngrok changes every 30s...');
+  console.log('========================================');
   console.log('');
   
-  // Check every 30 seconds for ngrok URL changes
   setInterval(checkAndReportNgrok, 30000);
 });
