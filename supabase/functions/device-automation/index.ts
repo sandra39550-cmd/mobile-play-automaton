@@ -35,20 +35,37 @@ const HOME_SCREEN_GAMES: { [packageName: string]: { name: string; icon: string; 
   'com.fungames.poolbilliard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
   'com.pm.billiard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
   'com.pool.billiard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
-  // Fallback patterns for billiard games
 }
 
-// Patterns for detecting billiard/pool games (case insensitive)
-const BILLIARD_PATTERNS = [
-  /pool/i,
-  /billiard/i,
-  /8ball/i,
-  /snooker/i,
+// Strict patterns for detecting billiard/pool GAMES (not system apps)
+// These patterns require game-like context, not just the word "pool"
+const BILLIARD_GAME_PATTERNS = [
+  /\.pool\./i,          // e.g., com.game.pool.master
+  /\.billiard/i,        // e.g., com.fun.billiard
+  /billiard\./i,        // e.g., billiard.game
+  /8ball/i,             // 8 ball pool games
+  /snooker/i,           // snooker games
+  /poolmaster/i,        // pool master
+  /poolgame/i,          // pool game
+]
+
+// Excluded system packages that might accidentally match
+const EXCLUDED_SYSTEM_PACKAGES = [
+  'com.android.printspooler',
+  'com.android.providers',
+  'com.android.systemui',
+  'com.google.android',
+  'com.samsung',
 ]
 
 // Check if a package is a home screen game
 function isHomeScreenGame(pkg: string): { isGame: boolean; info?: { name: string; icon: string; category: string } } {
-  // Check exact match first
+  // FIRST: Exclude known system packages
+  if (EXCLUDED_SYSTEM_PACKAGES.some(excluded => pkg.startsWith(excluded))) {
+    return { isGame: false }
+  }
+  
+  // Check exact match in whitelist
   if (HOME_SCREEN_GAMES[pkg]) {
     return { isGame: true, info: HOME_SCREEN_GAMES[pkg] }
   }
@@ -58,8 +75,8 @@ function isHomeScreenGame(pkg: string): { isGame: boolean; info?: { name: string
     return { isGame: true, info: { name: 'Tile Park', icon: '🧩', category: 'Puzzle' } }
   }
   
-  // Check billiard/pool patterns
-  if (BILLIARD_PATTERNS.some(pattern => pattern.test(pkg))) {
+  // Check strict billiard/pool game patterns
+  if (BILLIARD_GAME_PATTERNS.some(pattern => pattern.test(pkg))) {
     return { isGame: true, info: { name: 'Pool Billiard', icon: '🎱', category: 'Sports' } }
   }
   
