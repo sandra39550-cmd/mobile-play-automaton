@@ -28,131 +28,62 @@ interface GameBot {
   actions: DeviceAction[]
 }
 
-// Known game package patterns and specific games
-const KNOWN_GAME_PACKAGES = [
-  // Match games
-  'com.king.candycrushsaga',
-  'com.king.candycrushsodasaga',
-  'com.king.farmheroessaga',
-  'com.supercell.clashofclans',
-  'com.supercell.clashroyale',
-  'com.supercell.brawlstars',
-  'com.rovio.angrybirds',
-  'com.igg.castleclash',
-  'com.gameloft',
-  'com.ea.game',
-  'com.zynga',
-  'com.outfit7',
-  'com.halfbrick',
-  'com.mojang.minecraftpe',
-  'com.kiloo.subwaysurf',
-  'com.nekki',
-  'com.fingersoft.hillclimb',
-  'com.dts.freefireth',
-  'com.tencent.ig',
-  'com.pubg',
-  'com.activision.callofduty',
-  'com.roblox.client',
-  'funvent.tilepark', // Tile Park specific
-]
-
-// Package name patterns that indicate games
-const GAME_PATTERNS = [
-  /\.game\./i,
-  /game$/i,
-  /games\./i,
-  /\.play\./i,
-  /puzzle/i,
-  /arcade/i,
-  /adventure/i,
-  /racing/i,
-  /shooter/i,
-  /rpg/i,
-  /casino/i,
-  /slots/i,
-  /candy/i,
-  /crush/i,
-  /clash/i,
-  /craft/i,
-  /ninja/i,
-  /zombie/i,
-  /dragon/i,
-  /hero/i,
-  /saga/i,
-  /run/i,
-  /jump/i,
-  /tilepark/i,
-  /tile/i,
-]
-
-function isSkippedPackage(pkg: string): boolean {
-  const skipPrefixes = [
-    'com.android.',
-    'com.google.android.',
-    'com.samsung.',
-    'com.sec.',
-    'com.microsoft.',
-    'com.facebook.',
-    'com.monotype.',
-    'com.dsi.ant.',
-    'com.gd.mobicore.',
-    'com.osp.',
-    'org.simalliance.',
-    'com.cleanmaster.',
-    'android.',
-  ]
-  
-  const skipExact = [
-    'com.whatsapp',
-    'android',
-    'com.wsomacp',
-    'com.wssnps',
-    'com.policydm',
-    'com.wssyncmldm',
-  ]
-  
-  if (skipPrefixes.some(prefix => pkg.startsWith(prefix))) return true
-  if (skipExact.includes(pkg)) return true
-  
-  const systemPatterns = [
-    /\.service$/i,
-    /\.provider$/i,
-    /\.signin$/i,
-    /\.socket$/i,
-    /\.server$/i,
-    /\.sdk$/i,
-    /\.pa$/i,
-    /font\./i,
-  ]
-  if (systemPatterns.some(pattern => pattern.test(pkg))) return true
-  
-  return false
+// STRICT WHITELIST: Only games visible on user's home screen
+// Add new games here as they are installed on the device home screen
+const HOME_SCREEN_GAMES: { [packageName: string]: { name: string; icon: string; category: string } } = {
+  'funvent.tilepark': { name: 'Tile Park', icon: '🧩', category: 'Puzzle' },
+  'com.fungames.poolbilliard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
+  'com.pm.billiard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
+  'com.pool.billiard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
+  // Fallback patterns for billiard games
 }
 
-function filterGamePackages(packages: string[]): { packageName: string; name: string }[] {
-  const games: { packageName: string; name: string }[] = []
+// Patterns for detecting billiard/pool games (case insensitive)
+const BILLIARD_PATTERNS = [
+  /pool/i,
+  /billiard/i,
+  /8ball/i,
+  /snooker/i,
+]
+
+// Check if a package is a home screen game
+function isHomeScreenGame(pkg: string): { isGame: boolean; info?: { name: string; icon: string; category: string } } {
+  // Check exact match first
+  if (HOME_SCREEN_GAMES[pkg]) {
+    return { isGame: true, info: HOME_SCREEN_GAMES[pkg] }
+  }
+  
+  // Check tilepark pattern
+  if (pkg.toLowerCase().includes('tilepark')) {
+    return { isGame: true, info: { name: 'Tile Park', icon: '🧩', category: 'Puzzle' } }
+  }
+  
+  // Check billiard/pool patterns
+  if (BILLIARD_PATTERNS.some(pattern => pattern.test(pkg))) {
+    return { isGame: true, info: { name: 'Pool Billiard', icon: '🎱', category: 'Sports' } }
+  }
+  
+  return { isGame: false }
+}
+
+// Filter packages to only return home screen games
+function filterGamePackages(packages: string[]): { packageName: string; name: string; icon: string; category: string }[] {
+  const games: { packageName: string; name: string; icon: string; category: string }[] = []
 
   for (const pkg of packages) {
-    if (isSkippedPackage(pkg)) continue
-
-    const isKnownGame = KNOWN_GAME_PACKAGES.some((known) => pkg.startsWith(known))
-    const matchesPattern = GAME_PATTERNS.some((pattern) => pattern.test(pkg))
-
-    if (isKnownGame || matchesPattern) {
+    const result = isHomeScreenGame(pkg)
+    if (result.isGame && result.info) {
       games.push({
         packageName: pkg,
-        name: formatPackageName(pkg),
+        name: result.info.name,
+        icon: result.info.icon,
+        category: result.info.category,
       })
     }
   }
 
+  console.log(`🎮 Filtered ${packages.length} packages down to ${games.length} home screen games`)
   return games
-}
-
-function packagesToApps(packages: string[]): { packageName: string; name: string }[] {
-  return packages
-    .filter((pkg) => !isSkippedPackage(pkg))
-    .map((pkg) => ({ packageName: pkg, name: formatPackageName(pkg) }))
 }
 
 function formatPackageName(pkg: string): string {
@@ -759,6 +690,8 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
       signal: AbortSignal.timeout(15000),
     })
 
+    let allPackages: string[] = []
+
     if (!response.ok && response.status === 404) {
       // Fallback to GET
       const fallbackUrl = `${baseUrl}/scan-apps?deviceId=${encodeURIComponent(device.device_id)}&category=games`
@@ -773,26 +706,33 @@ async function simulateGameScan(device: any, adbServerUrl: string): Promise<any[
       }
 
       const result = await fallbackRes.json()
-      return (result.apps || []).map((app: any) => ({
-        name: app.name || formatPackageName(app.packageName || app),
-        icon: app.icon || '🎮',
-        category: app.category || 'Game',
-        packageName: app.packageName || app,
-        isInstalled: true,
-      }))
-    }
-
-    if (!response.ok) {
+      // Extract package names from response
+      if (result.apps) {
+        allPackages = result.apps.map((app: any) => app.packageName || app)
+      } else if (result.packages) {
+        allPackages = result.packages
+      }
+    } else if (response.ok) {
+      const result = await response.json()
+      if (result.apps) {
+        allPackages = result.apps.map((app: any) => app.packageName || app)
+      } else if (result.packages) {
+        allPackages = result.packages
+      }
+    } else {
       throw new Error(`Scan failed: ${response.status}`)
     }
+
+    console.log(`📦 Total packages from device: ${allPackages.length}`)
     
-    const result = await response.json()
+    // Apply strict home screen game filtering
+    const homeScreenGames = filterGamePackages(allPackages)
     
-    return (result.apps || []).map((app: any) => ({
-      name: app.name || formatPackageName(app.packageName || app),
-      icon: app.icon || '🎮',
-      category: app.category || 'Game',
-      packageName: app.packageName || app,
+    return homeScreenGames.map((game) => ({
+      name: game.name,
+      icon: game.icon,
+      category: game.category,
+      packageName: game.packageName,
       isInstalled: true,
     }))
   } catch (error) {
