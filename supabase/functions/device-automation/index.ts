@@ -87,6 +87,12 @@ function isHomeScreenGame(pkg: string): { isGame: boolean; info?: { name: string
 function filterGamePackages(packages: string[]): { packageName: string; name: string; icon: string; category: string }[] {
   const games: { packageName: string; name: string; icon: string; category: string }[] = []
 
+  // DEBUG: Log any packages containing billiard, pool, or game keywords
+  const potentialGames = packages.filter(pkg => 
+    /billiard|pool|game|play/i.test(pkg) && !pkg.startsWith('com.android') && !pkg.startsWith('com.google')
+  )
+  console.log('🔍 Potential game packages found:', JSON.stringify(potentialGames))
+
   for (const pkg of packages) {
     const result = isHomeScreenGame(pkg)
     if (result.isGame && result.info) {
@@ -100,6 +106,7 @@ function filterGamePackages(packages: string[]): { packageName: string; name: st
   }
 
   console.log(`🎮 Filtered ${packages.length} packages down to ${games.length} home screen games`)
+  console.log('✅ Matched games:', JSON.stringify(games.map(g => g.packageName)))
   return games
 }
 
