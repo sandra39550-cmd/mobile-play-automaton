@@ -35,37 +35,20 @@ const HOME_SCREEN_GAMES: { [packageName: string]: { name: string; icon: string; 
   'com.fungames.poolbilliard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
   'com.pm.billiard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
   'com.pool.billiard': { name: 'Pool Billiard', icon: '🎱', category: 'Sports' },
+  // Fallback patterns for billiard games
 }
 
-// Strict patterns for detecting billiard/pool GAMES (not system apps)
-// These patterns require game-like context, not just the word "pool"
-const BILLIARD_GAME_PATTERNS = [
-  /\.pool\./i,          // e.g., com.game.pool.master
-  /\.billiard/i,        // e.g., com.fun.billiard
-  /billiard\./i,        // e.g., billiard.game
-  /8ball/i,             // 8 ball pool games
-  /snooker/i,           // snooker games
-  /poolmaster/i,        // pool master
-  /poolgame/i,          // pool game
-]
-
-// Excluded system packages that might accidentally match
-const EXCLUDED_SYSTEM_PACKAGES = [
-  'com.android.printspooler',
-  'com.android.providers',
-  'com.android.systemui',
-  'com.google.android',
-  'com.samsung',
+// Patterns for detecting billiard/pool games (case insensitive)
+const BILLIARD_PATTERNS = [
+  /pool/i,
+  /billiard/i,
+  /8ball/i,
+  /snooker/i,
 ]
 
 // Check if a package is a home screen game
 function isHomeScreenGame(pkg: string): { isGame: boolean; info?: { name: string; icon: string; category: string } } {
-  // FIRST: Exclude known system packages
-  if (EXCLUDED_SYSTEM_PACKAGES.some(excluded => pkg.startsWith(excluded))) {
-    return { isGame: false }
-  }
-  
-  // Check exact match in whitelist
+  // Check exact match first
   if (HOME_SCREEN_GAMES[pkg]) {
     return { isGame: true, info: HOME_SCREEN_GAMES[pkg] }
   }
@@ -75,8 +58,8 @@ function isHomeScreenGame(pkg: string): { isGame: boolean; info?: { name: string
     return { isGame: true, info: { name: 'Tile Park', icon: '🧩', category: 'Puzzle' } }
   }
   
-  // Check strict billiard/pool game patterns
-  if (BILLIARD_GAME_PATTERNS.some(pattern => pattern.test(pkg))) {
+  // Check billiard/pool patterns
+  if (BILLIARD_PATTERNS.some(pattern => pattern.test(pkg))) {
     return { isGame: true, info: { name: 'Pool Billiard', icon: '🎱', category: 'Sports' } }
   }
   
@@ -86,12 +69,6 @@ function isHomeScreenGame(pkg: string): { isGame: boolean; info?: { name: string
 // Filter packages to only return home screen games
 function filterGamePackages(packages: string[]): { packageName: string; name: string; icon: string; category: string }[] {
   const games: { packageName: string; name: string; icon: string; category: string }[] = []
-
-  // DEBUG: Log any packages containing billiard, pool, or game keywords
-  const potentialGames = packages.filter(pkg => 
-    /billiard|pool|game|play/i.test(pkg) && !pkg.startsWith('com.android') && !pkg.startsWith('com.google')
-  )
-  console.log('🔍 Potential game packages found:', JSON.stringify(potentialGames))
 
   for (const pkg of packages) {
     const result = isHomeScreenGame(pkg)
@@ -106,7 +83,6 @@ function filterGamePackages(packages: string[]): { packageName: string; name: st
   }
 
   console.log(`🎮 Filtered ${packages.length} packages down to ${games.length} home screen games`)
-  console.log('✅ Matched games:', JSON.stringify(games.map(g => g.packageName)))
   return games
 }
 
