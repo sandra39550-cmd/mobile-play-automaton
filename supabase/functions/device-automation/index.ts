@@ -1069,13 +1069,13 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
   }
 }
 
-// Analyze screenshot with Gemini AI for Tile Park game
-async function analyzeScreenWithGemini(screenshot: string, gameName: string): Promise<{
+// Enhanced AI Vision Analysis for Tile Park game
+async function analyzeScreenWithGemini(screenshotBase64: string, gameName: string): Promise<{
   action: DeviceAction | null
   description: string
   tiles?: any[]
 }> {
-  console.log(`🧠 Analyzing ${gameName} screenshot with AI...`)
+  console.log(`🧠 Analyzing ${gameName} with Gemini AI Vision...`)
   
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
   
@@ -1083,6 +1083,44 @@ async function analyzeScreenWithGemini(screenshot: string, gameName: string): Pr
     console.warn('⚠️ LOVABLE_API_KEY not configured, using heuristic analysis')
     return analyzeScreenHeuristic(gameName)
   }
+  
+  // Validate screenshot
+  if (!screenshotBase64 || screenshotBase64.length < 100) {
+    console.warn('⚠️ Invalid screenshot, using heuristic')
+    return analyzeScreenHeuristic(gameName)
+  }
+  
+  const systemPrompt = `You are an expert game automation bot for the Tile Park tile-matching puzzle game.
+
+GAME RULES:
+- Tile Park shows a grid of tiles with icons (fruits, vegetables, shapes)
+- Tap TWO identical tiles to match and remove them
+- Tiles can only match if there's a clear path between them (max 2 corners)
+- Clear all tiles to win the level
+
+SCREEN LAYOUT (720x1280 pixels):
+- Top area (y: 0-300): Score, timer, level info
+- Game board (y: 350-950, x: 50-670): Tile grid
+- Bottom area (y: 950+): Hints, settings buttons
+
+TILE GRID:
+- Tiles are ~80x80 pixels each
+- Grid is typically 7-8 columns wide
+- Tiles have distinct icons (🥕🍇🥑🍎🍊🫐🍋 etc.)
+
+YOUR JOB:
+1. Determine screen state: "menu", "playing", "level_complete", or "paused"
+2. If "menu": tap the PLAY or START button (usually center, y: 600-900)
+3. If "level_complete": tap NEXT button
+4. If "playing": Find a matching pair and return the FIRST tile's coordinates
+
+RESPOND WITH ONLY THIS JSON FORMAT:
+{
+  "gameState": "playing",
+  "action": { "type": "tap", "x": 360, "y": 500 },
+  "description": "Tapping carrot tile at row 2 col 4",
+  "confidence": 0.85
+}`
   
   try {
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -1092,127 +1130,89 @@ async function analyzeScreenWithGemini(screenshot: string, gameName: string): Pr
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-2.5-pro',
         messages: [
-          {
-            role: 'system',
-            content: `You are a game automation assistant analyzing screenshots of the Tile Park game. 
-            
-The game shows a grid of tiles with fruit/vegetable icons (carrots, avocados, grapes, etc.). 
-The goal is to tap matching tiles to remove them.
-
-Analyze the screenshot and identify:
-1. The current game state (menu, playing, level complete, etc.)
-2. Visible tiles and their positions
-3. The best tile to tap next (prioritize matching pairs that are accessible)
-
-The screen is 720x1280 pixels. The game board is typically in the center.
-- The tile area is roughly x: 150-570, y: 400-800
-- Each tile is approximately 80-100 pixels wide
-
-Respond with JSON in this exact format:
-{
-  "gameState": "playing" | "menu" | "level_complete" | "game_over",
-  "action": {
-    "type": "tap",
-    "x": <number between 150-570>,
-    "y": <number between 400-800>,
-    "tileType": "carrot" | "avocado" | "grapes" | "unknown"
-  },
-  "description": "Brief description of what you see and why you chose this action",
-  "confidence": <0-1>
-}`
-          },
+          { role: 'system', content: systemPrompt },
           {
             role: 'user',
             content: [
-              {
-                type: 'text',
-                text: 'Analyze this Tile Park game screenshot and tell me which tile to tap next.'
-              },
+              { type: 'text', text: 'Analyze this Tile Park screenshot. Return the exact x,y coordinates to tap.' },
               {
                 type: 'image_url',
-                image_url: {
-                  url: screenshot
-                }
+                image_url: { url: screenshotBase64 }
               }
             ]
           }
         ],
-        max_tokens: 500
+        max_tokens: 600,
+        temperature: 0.2
       }),
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(25000)
     })
     
     if (!response.ok) {
-      console.error('AI analysis failed:', response.status, await response.text())
+      const errText = await response.text()
+      console.error('❌ Gemini API error:', response.status, errText)
       return analyzeScreenHeuristic(gameName)
     }
     
     const result = await response.json()
     const content = result.choices?.[0]?.message?.content || ''
     
-    console.log('🧠 AI response:', content)
+    console.log('🧠 Gemini response:', content.substring(0, 500))
     
-    // Parse JSON from response
+    // Extract JSON from response
     const jsonMatch = content.match(/\{[\s\S]*\}/)
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[0])
+        console.log('✅ Parsed AI action:', JSON.stringify(parsed.action))
         
-        if (parsed.action && parsed.action.x && parsed.action.y) {
+        if (parsed.action && typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
+          // Clamp coordinates to valid screen area
+          const x = Math.max(50, Math.min(670, Math.round(parsed.action.x)))
+          const y = Math.max(200, Math.min(1100, Math.round(parsed.action.y)))
+          
+          console.log(`🎯 AI target: (${x}, ${y}) - ${parsed.description || 'tile tap'}`)
+          
           return {
-            action: {
-              type: 'tap',
-              coordinates: { 
-                x: Math.round(parsed.action.x), 
-                y: Math.round(parsed.action.y) 
-              }
-            },
-            description: parsed.description || `AI detected ${parsed.action.tileType || 'tile'} at (${parsed.action.x}, ${parsed.action.y})`
+            action: { type: 'tap', coordinates: { x, y } },
+            description: parsed.description || `AI tap at (${x}, ${y})`
           }
         }
       } catch (parseError) {
-        console.error('Failed to parse AI response JSON:', parseError)
+        console.error('❌ JSON parse error:', parseError)
       }
     }
     
-    // If parsing failed, use heuristic
+    console.warn('⚠️ Using heuristic fallback')
     return analyzeScreenHeuristic(gameName)
   } catch (error) {
-    console.error('AI analysis error:', error)
+    console.error('❌ Gemini analysis error:', error)
     return analyzeScreenHeuristic(gameName)
   }
 }
 
-// Heuristic-based screen analysis (fallback)
+// Heuristic fallback for when AI is unavailable
 function analyzeScreenHeuristic(gameName: string): {
   action: DeviceAction | null
   description: string
 } {
   const lowerGame = gameName.toLowerCase()
   
-  // Tile Park / Tile matching games
   if (lowerGame.includes('tile') || lowerGame.includes('match') || lowerGame.includes('puzzle')) {
-    // Tile Park game board is typically centered
-    // Random tap in the game tile area (based on 720x1280 screen)
-    // Game area is approximately: x=150-570, y=400-800
+    // Tile Park grid positions (720x1280 screen)
     const tilePositions = [
-      { x: 200, y: 450 }, { x: 290, y: 450 }, { x: 380, y: 450 }, { x: 470, y: 450 },
-      { x: 200, y: 530 }, { x: 290, y: 530 }, { x: 380, y: 530 }, { x: 470, y: 530 },
-      { x: 200, y: 610 }, { x: 290, y: 610 }, { x: 380, y: 610 }, { x: 470, y: 610 },
-      { x: 200, y: 690 }, { x: 290, y: 690 }, { x: 380, y: 690 }, { x: 470, y: 690 },
+      { x: 130, y: 430 }, { x: 210, y: 430 }, { x: 290, y: 430 }, { x: 370, y: 430 }, { x: 450, y: 430 }, { x: 530, y: 430 },
+      { x: 130, y: 510 }, { x: 210, y: 510 }, { x: 290, y: 510 }, { x: 370, y: 510 }, { x: 450, y: 510 }, { x: 530, y: 510 },
+      { x: 130, y: 590 }, { x: 210, y: 590 }, { x: 290, y: 590 }, { x: 370, y: 590 }, { x: 450, y: 590 }, { x: 530, y: 590 },
+      { x: 130, y: 670 }, { x: 210, y: 670 }, { x: 290, y: 670 }, { x: 370, y: 670 }, { x: 450, y: 670 }, { x: 530, y: 670 },
+      { x: 130, y: 750 }, { x: 210, y: 750 }, { x: 290, y: 750 }, { x: 370, y: 750 }, { x: 450, y: 750 }, { x: 530, y: 750 },
     ]
-    
-    // Pick a random tile position
     const pos = tilePositions[Math.floor(Math.random() * tilePositions.length)]
-    
     return {
-      action: {
-        type: 'tap',
-        coordinates: pos
-      },
-      description: `Tapping tile at (${pos.x}, ${pos.y})`
+      action: { type: 'tap', coordinates: pos },
+      description: `Heuristic tap at (${pos.x}, ${pos.y})`
     }
   }
   
