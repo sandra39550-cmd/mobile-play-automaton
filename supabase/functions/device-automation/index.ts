@@ -937,10 +937,12 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       // 1. Take screenshot
       const screenshot = await takeRealScreenshot(baseUrl, deviceId)
       
-      if (!screenshot) {
-        console.warn('⚠️ Failed to capture screenshot, skipping iteration')
+      if (!screenshot || screenshot.length < 500) {
+        console.warn(`⚠️ Screenshot invalid (length: ${screenshot?.length || 0}), skipping`)
         continue
       }
+      
+      console.log(`🖼️ Screenshot ready (${screenshot.length} chars), calling Gemini AI...`)
       
       // 2. Analyze screenshot with AI to find tile matches
       let analysis
@@ -948,6 +950,7 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
           session.package_name.toLowerCase().includes('tilepark')) {
         // Use AI vision for Tile Park
         analysis = await analyzeScreenWithGemini(screenshot, session.game_name)
+        console.log(`🎯 AI result: ${analysis.description}`)
       } else {
         // Fallback to heuristic analysis
         analysis = analyzeScreenHeuristic(session.game_name)
@@ -955,6 +958,9 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       
       // 3. Execute the recommended action
       if (analysis.action) {
+        const coords = analysis.action.coordinates
+        console.log(`👆 Tapping at (${coords?.x}, ${coords?.y})...`)
+        
         // Add deviceId to the action
         const actionWithDevice = {
           ...analysis.action,
@@ -963,6 +969,7 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
         
         const actionResult = await executeRealAction(baseUrl, actionWithDevice)
         actionsPerformed++
+        console.log(`✅ Tap result: success=${actionResult.success}, time=${actionResult.executionTime}ms`)
         
         // Log the action
         await supabaseClient
@@ -1037,12 +1044,17 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
 
     if (postResponse.ok) {
       const result = await postResponse.json()
-      console.log('📸 Screenshot captured successfully (POST)')
-      return result.screenshot || ''
+      const screenshot = result.screenshot || ''
+      if (screenshot && screenshot.length > 500) {
+        console.log(`📸 Screenshot OK (POST): ${screenshot.length} chars`)
+        return screenshot
+      }
+      console.warn(`⚠️ POST screenshot too short: ${screenshot.length} chars`)
     }
 
-    const postText = await postResponse.text()
-    console.error('Screenshot POST failed:', postText)
+    if (!postResponse.ok) {
+      console.error('Screenshot POST failed:', postResponse.status)
+    }
 
     const url = new URL(`${baseUrl}/screenshot`)
     url.searchParams.set('deviceId', deviceId)
@@ -1056,13 +1068,18 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
     })
 
     if (!getResponse.ok) {
-      console.error('Screenshot GET failed:', await getResponse.text())
+      console.error('Screenshot GET failed:', getResponse.status)
       return ''
     }
 
     const result = await getResponse.json()
-    console.log('📸 Screenshot captured successfully (GET)')
-    return result.screenshot || ''
+    const screenshot = result.screenshot || ''
+    if (screenshot && screenshot.length > 500) {
+      console.log(`📸 Screenshot OK (GET): ${screenshot.length} chars`)
+      return screenshot
+    }
+    console.warn(`⚠️ GET screenshot too short: ${screenshot.length} chars`)
+    return ''
   } catch (error) {
     console.error('Screenshot error:', error)
     return ''
