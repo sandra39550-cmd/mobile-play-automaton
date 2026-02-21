@@ -143,7 +143,7 @@ export const GameBotDashboard = () => {
             </h1>
           </div>
           <p className="text-xl text-muted-foreground">
-            Real AI automation for mobile gaming
+            Gemini Powered AI Agent For Mobile Games
           </p>
           <div className="flex items-center justify-center gap-2">
             <Badge variant="outline" className="text-neon-green border-neon-green">
