@@ -123,11 +123,11 @@ export const useGameManagement = () => {
           config: {},
         });
         
-        toast.success(`${game.name} bot started on ${availableDevice.name}`);
+        toast.success(`${game.name} agent started on ${availableDevice.name}`);
       } else if (game.sessionId) {
         if (newStatus === 'stopped') {
           await stopBotSession(game.sessionId);
-          toast.success(`${game.name} bot stopped`);
+          toast.success(`${game.name} agent stopped`);
         } else {
           // For pause, we'll update the session status directly
           const { error } = await supabase
@@ -136,7 +136,7 @@ export const useGameManagement = () => {
             .eq('id', game.sessionId);
 
           if (error) throw error;
-          toast.success(`${game.name} bot ${newStatus}`);
+          toast.success(`${game.name} agent ${newStatus}`);
         }
       }
 
@@ -167,7 +167,7 @@ export const useGameManagement = () => {
         config: {},
       });
 
-      toast.success(`${gameName} bot session created`);
+      toast.success(`${gameName} agent session created`);
       await loadGames();
     } catch (error) {
       console.error('Error adding game session:', error);

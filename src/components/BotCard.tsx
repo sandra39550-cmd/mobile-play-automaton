@@ -62,7 +62,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
   };
 
   const startBotLoop = async (sessionId: string, deviceId: string) => {
-    console.log(`🤖 Starting bot loop for session ${sessionId} on device ${deviceId}`);
+    console.log(`🤖 Starting agent loop for session ${sessionId} on device ${deviceId}`);
     
     const runLoop = async () => {
       try {
@@ -84,13 +84,13 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
         
         if (loopData?.success) {
           setActionsCount(loopData.totalActions || 0);
-          console.log(`✅ Bot loop completed: ${loopData.actionsPerformed} actions`);
+          console.log(`✅ Agent loop completed: ${loopData.actionsPerformed} actions`);
         } else if (loopData?.error) {
-          console.error('Bot loop failed:', loopData.error);
-          toast.error(`Bot error: ${loopData.error}`);
+          console.error('Agent loop failed:', loopData.error);
+          toast.error(`Agent error: ${loopData.error}`);
         }
       } catch (err) {
-        console.error('Bot loop exception:', err);
+        console.error('Agent loop exception:', err);
       }
     };
 
@@ -109,7 +109,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
     setIsPlaying(false);
     setCurrentSessionId(null);
     onStatusChange(game.id, "stopped");
-    toast.info(`⏹️ Bot stopped playing ${game.name}`);
+    toast.info(`⏹️ Agent stopped playing ${game.name}`);
   };
 
   const handlePlayNow = async () => {
@@ -151,7 +151,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
       }
 
       if (data.success && data.launched) {
-        toast.success(`🎮 ${game.name} launched! Starting bot in 3 seconds...`, { id: 'launch-game', duration: 3000 });
+        toast.success(`🎮 ${game.name} launched! Starting agent in 3 seconds...`, { id: 'launch-game', duration: 3000 });
         
         // Store session info
         const sessionId = data.session?.id;
@@ -164,7 +164,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
         setTimeout(() => {
           if (sessionId) {
             setIsPlaying(true);
-            toast.success(`🤖 Bot is now playing ${game.name}!`, { duration: 3000 });
+            toast.success(`🤖 Agent is now playing ${game.name}!`, { duration: 3000 });
             startBotLoop(sessionId, hwDeviceId);
           }
         }, 3000);
