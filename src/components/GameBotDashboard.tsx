@@ -139,7 +139,7 @@ export const GameBotDashboard = () => {
           <div className="flex items-center justify-center gap-3 mb-4">
             <Bot className="w-10 h-10 text-neon-purple animate-pulse-glow" />
             <h1 className="text-4xl font-bold bg-gradient-to-r from-neon-purple to-neon-blue bg-clip-text text-transparent animate-glow">
-              Mobile Game Bot Controller
+              SIMA 2 For Mobile Gaming
             </h1>
           </div>
           <p className="text-xl text-muted-foreground">
