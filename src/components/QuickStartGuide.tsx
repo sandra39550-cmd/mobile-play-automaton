@@ -29,7 +29,7 @@ export const QuickStartGuide = ({ onConnectDevice, hasDevices }: QuickStartGuide
     },
     {
       id: 3,
-      title: "Start Bot",
+      title: "Start Agent",
       description: "Begin automated gaming",
       icon: <CheckCircle className="w-5 h-5" />,
       completed: false
