@@ -223,7 +223,7 @@ export const useGameManagement = () => {
     const activeBots = games.filter(g => g.status === 'active').length;
     const totalEarnings = games.reduce((sum, g) => sum + g.currency, 0);
     const totalRuntime = sessions.reduce((sum, s) => sum + (s.runtime_minutes || 0), 0);
-    const avgSuccessRate = sessions.length > 0 ? 94.2 : 0; // Mock success rate
+    const avgSuccessRate = sessions.length > 0 ? 100 : 0; // Mock success rate
 
     return {
       activeBots,
