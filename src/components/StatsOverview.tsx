@@ -26,7 +26,7 @@ export const StatsOverview = ({ stats }: StatsOverviewProps) => {
 
   const statsData = [
     {
-      title: "Active Agents",
+      title: "Active Agent",
       value: stats.activeBots.toString(),
       change: stats.activeBots > 0 ? `+${stats.activeBots}` : "0",
       icon: Zap,

@@ -150,7 +150,7 @@ export const GameBotDashboard = () => {
               {onlineDevices.length} Online Devices
             </Badge>
             <Badge variant="outline" className="text-neon-blue border-neon-blue">
-              {stats.activeBots} Active Agents
+              {stats.activeBots} Active Agent
             </Badge>
             <Badge variant="outline" className="text-neon-pink border-neon-pink">
               {games.length} Games Available
@@ -169,7 +169,7 @@ export const GameBotDashboard = () => {
           <TabsList className="grid w-full grid-cols-2 bg-gaming-card border-gaming-border">
             <TabsTrigger value="bots" className="flex items-center gap-2">
               <Bot className="w-4 h-4" />
-              Game Agents
+              Game Agent
             </TabsTrigger>
             <TabsTrigger value="devices" className="flex items-center gap-2">
               <Smartphone className="w-4 h-4" />
