@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { BotCard } from "./BotCard";
 import { StatsOverview } from "./StatsOverview";
 import { DeviceConnection } from "./DeviceConnection";
 import { QuickStartGuide } from "./QuickStartGuide";
+import { PerceptionView } from "./PerceptionView";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,11 @@ export const GameBotDashboard = () => {
   const availableDevices = devices; // Show all devices, not just online ones
   const stats = getStats();
   const availableGamesForDevice = selectedDevice ? getAvailableGamesForDevice(selectedDevice) : [];
+
+  // Determine the active game's device ID for perception
+  const activeGame = useMemo(() => games.find(g => g.status === 'active'), [games]);
+  const perceptionDeviceId = activeGame?.deviceId || (onlineDevices.length > 0 ? onlineDevices[0].device_id : undefined);
+  const perceptionGameName = activeGame?.name || 'Unknown';
   
   // Filter games based on search and category
   const filteredGames = games.filter(game => {
@@ -409,6 +415,12 @@ export const GameBotDashboard = () => {
                 <p className="text-muted-foreground">Try adjusting your search or filters</p>
               </div>
             )}
+
+            {/* Agent Perception Panel */}
+            <PerceptionView 
+              deviceId={perceptionDeviceId}
+              gameName={perceptionGameName}
+            />
           </TabsContent>
           
           <TabsContent value="devices">
