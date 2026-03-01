@@ -4,6 +4,8 @@ import { StatsOverview } from "./StatsOverview";
 import { DeviceConnection } from "./DeviceConnection";
 import { QuickStartGuide } from "./QuickStartGuide";
 import { PerceptionView } from "./PerceptionView";
+import { ReasoningView } from "./ReasoningView";
+import { usePerception } from "@/hooks/usePerception";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 export const GameBotDashboard = () => {
   const { devices, sessions, checkAllDeviceStatus, loadDevices } = useDeviceAutomation();
   const { games, deviceGames, isLoading, handleGameStatusChange, addGameSession, getAvailableGamesForDevice, scanGamesOnDevice, getStats } = useGameManagement();
+  const { latestPerception, isPerceiving, perceive, perceptionHistory, error: perceptionError, clearHistory } = usePerception();
   const [currentTab, setCurrentTab] = useState("bots");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -419,6 +422,18 @@ export const GameBotDashboard = () => {
             {/* Agent Perception Panel */}
             <PerceptionView 
               deviceId={perceptionDeviceId}
+              gameName={perceptionGameName}
+              latestPerception={latestPerception}
+              isPerceiving={isPerceiving}
+              onPerceive={() => perceptionDeviceId && perceive(perceptionDeviceId, perceptionGameName)}
+              perceptionHistory={perceptionHistory}
+              error={perceptionError}
+              onClearHistory={clearHistory}
+            />
+
+            {/* Agent Reasoning Panel */}
+            <ReasoningView
+              perception={latestPerception}
               gameName={perceptionGameName}
             />
           </TabsContent>
