@@ -167,6 +167,8 @@ serve(async (req) => {
         return await executeTapAction(supabaseClient, payload.deviceId, payload.x, payload.y)
       case 'analyze_screen':
         return await analyzeScreenWithAI(supabaseClient, payload.deviceId, payload.gameName)
+      case 'perceive':
+        return await perceiveScene(supabaseClient, payload.deviceId, payload.gameName)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -1292,6 +1294,218 @@ async function executeRealAction(baseUrl: string, action: DeviceAction): Promise
   } catch (error) {
     console.error('Action error:', error)
     return { success: false, executionTime: Date.now() - startTime }
+  }
+}
+
+// ============ PERCEPTION LAYER (SIMA 2 Phase 1) ============
+
+async function perceiveScene(supabaseClient: any, deviceId: string, gameName: string) {
+  const startTime = Date.now()
+  console.log(`👁️ PERCEIVE: Starting perception for ${gameName} on device ${deviceId}`)
+
+  try {
+    // 1. Resolve device
+    let device = null
+    const { data: deviceById } = await supabaseClient
+      .from('devices').select('*').eq('id', deviceId).maybeSingle()
+    if (deviceById) {
+      device = deviceById
+    } else {
+      const { data: deviceByHwId } = await supabaseClient
+        .from('devices').select('*').eq('device_id', deviceId).maybeSingle()
+      device = deviceByHwId
+    }
+
+    if (!device) throw new Error('Device not found')
+    if (device.status !== 'online') throw new Error(`Device is ${device.status}`)
+
+    const hwDeviceId = device.device_id
+    const adbServerUrl = await getAdbServerUrl(supabaseClient)
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+
+    // 2. Capture screenshot
+    const screenshot = await takeRealScreenshot(baseUrl, hwDeviceId)
+    if (!screenshot || screenshot.length < 500) {
+      throw new Error('Failed to capture valid screenshot')
+    }
+    console.log(`👁️ PERCEIVE: Screenshot captured (${screenshot.length} chars)`)
+
+    // 3. Send to Gemini for structured perception
+    const perception = await geminiPerceive(screenshot, gameName)
+    const processingTimeMs = Date.now() - startTime
+
+    const result = {
+      timestamp: new Date().toISOString(),
+      screenshotPreview: screenshot.substring(0, 200) + '...',
+      sceneUnderstanding: perception.sceneUnderstanding,
+      detectedElements: perception.detectedElements,
+      screenText: perception.screenText,
+      suggestedAction: perception.suggestedAction,
+      processingTimeMs,
+    }
+
+    console.log(`👁️ PERCEIVE: Complete in ${processingTimeMs}ms — state: ${perception.sceneUnderstanding.gameState}, elements: ${perception.detectedElements.length}`)
+
+    return new Response(JSON.stringify({ success: true, perception: result }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('👁️ PERCEIVE ERROR:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+async function geminiPerceive(screenshotBase64: string, gameName: string) {
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+
+  // Fallback if no API key
+  if (!LOVABLE_API_KEY) {
+    console.warn('👁️ No LOVABLE_API_KEY, using heuristic perception')
+    return heuristicPerception(gameName)
+  }
+
+  const systemPrompt = `You are the PERCEPTION MODULE of SIMA 2, an advanced AI game agent.
+Your job is to OBSERVE and UNDERSTAND the current game screen — not to play, just to perceive.
+
+Analyze the screenshot and return a STRUCTURED JSON perception report.
+
+RESPOND WITH ONLY THIS JSON (no markdown, no explanation):
+{
+  "sceneUnderstanding": {
+    "gameState": "menu|playing|paused|level_complete|loading|unknown",
+    "gamePhase": "Brief description of what's happening on screen",
+    "confidence": 0.0-1.0
+  },
+  "detectedElements": [
+    {
+      "type": "button|tile|text|icon|progress_bar|timer|score|menu_item|ad|popup",
+      "label": "Human-readable label for this element",
+      "confidence": 0.0-1.0,
+      "boundingBox": { "x": 0, "y": 0, "width": 0, "height": 0 },
+      "actionable": true
+    }
+  ],
+  "screenText": ["any text visible on screen"],
+  "suggestedAction": {
+    "type": "tap|swipe|wait|dismiss",
+    "coordinates": { "x": 360, "y": 640 },
+    "reasoning": "Why this action makes sense given current state",
+    "confidence": 0.0-1.0
+  }
+}
+
+RULES:
+- Report ALL visible UI elements (buttons, tiles, text, scores, timers)
+- Be precise with bounding boxes (screen is 720x1280)
+- Set actionable=true only for elements the player can interact with
+- suggestedAction should be the SINGLE best next move
+- If screen shows a popup/ad, suggest dismissing it
+- Confidence should reflect how certain you are`
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-pro',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `Analyze this ${gameName} screenshot. Return structured perception JSON.` },
+              { type: 'image_url', image_url: { url: screenshotBase64 } }
+            ]
+          }
+        ],
+        max_tokens: 1500,
+        temperature: 0.1
+      }),
+      signal: AbortSignal.timeout(30000)
+    })
+
+    if (!response.ok) {
+      console.error('Gemini perception API error:', response.status)
+      return heuristicPerception(gameName)
+    }
+
+    const result = await response.json()
+    const content = result.choices?.[0]?.message?.content || ''
+
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0])
+        // Validate and sanitize
+        return {
+          sceneUnderstanding: {
+            gameState: parsed.sceneUnderstanding?.gameState || 'unknown',
+            gamePhase: parsed.sceneUnderstanding?.gamePhase || 'Unknown screen state',
+            confidence: Math.min(1, Math.max(0, parsed.sceneUnderstanding?.confidence || 0.5)),
+          },
+          detectedElements: (parsed.detectedElements || []).map((el: any) => ({
+            type: el.type || 'unknown',
+            label: el.label || 'Unknown element',
+            confidence: Math.min(1, Math.max(0, el.confidence || 0.5)),
+            boundingBox: {
+              x: Math.max(0, el.boundingBox?.x || 0),
+              y: Math.max(0, el.boundingBox?.y || 0),
+              width: Math.max(0, el.boundingBox?.width || 0),
+              height: Math.max(0, el.boundingBox?.height || 0),
+            },
+            actionable: !!el.actionable,
+          })),
+          screenText: Array.isArray(parsed.screenText) ? parsed.screenText : [],
+          suggestedAction: parsed.suggestedAction ? {
+            type: parsed.suggestedAction.type || 'tap',
+            coordinates: {
+              x: Math.max(0, Math.min(720, parsed.suggestedAction.coordinates?.x || 360)),
+              y: Math.max(0, Math.min(1280, parsed.suggestedAction.coordinates?.y || 640)),
+            },
+            reasoning: parsed.suggestedAction.reasoning || 'AI suggested action',
+            confidence: Math.min(1, Math.max(0, parsed.suggestedAction.confidence || 0.5)),
+          } : null,
+        }
+      } catch (parseError) {
+        console.error('Perception JSON parse error:', parseError)
+      }
+    }
+
+    return heuristicPerception(gameName)
+  } catch (error) {
+    console.error('Gemini perception error:', error)
+    return heuristicPerception(gameName)
+  }
+}
+
+function heuristicPerception(gameName: string) {
+  return {
+    sceneUnderstanding: {
+      gameState: 'unknown' as const,
+      gamePhase: 'Heuristic fallback — no AI vision available',
+      confidence: 0.3,
+    },
+    detectedElements: [
+      {
+        type: 'button',
+        label: 'Probable center button',
+        confidence: 0.4,
+        boundingBox: { x: 260, y: 540, width: 200, height: 60 },
+        actionable: true,
+      }
+    ],
+    screenText: [],
+    suggestedAction: {
+      type: 'tap',
+      coordinates: { x: 360, y: 640 },
+      reasoning: 'Heuristic: tapping center of screen (no AI available)',
+      confidence: 0.3,
+    },
   }
 }
 
