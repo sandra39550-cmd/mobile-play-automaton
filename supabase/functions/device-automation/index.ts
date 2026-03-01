@@ -169,6 +169,8 @@ serve(async (req) => {
         return await analyzeScreenWithAI(supabaseClient, payload.deviceId, payload.gameName)
       case 'perceive':
         return await perceiveScene(supabaseClient, payload.deviceId, payload.gameName)
+      case 'reason':
+        return await reasonAboutScene(supabaseClient, payload.perception, payload.gameName, payload.objective, payload.actionHistory)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -1506,6 +1508,225 @@ function heuristicPerception(gameName: string) {
       reasoning: 'Heuristic: tapping center of screen (no AI available)',
       confidence: 0.3,
     },
+  }
+}
+
+// ============ REASONING ENGINE (SIMA 2 Phase 2) ============
+
+async function reasonAboutScene(supabaseClient: any, perception: any, gameName: string, objective: string, actionHistory: any[]) {
+  const startTime = Date.now()
+  console.log(`🧠 REASON: Starting chain-of-thought for ${gameName}, objective: "${objective}"`)
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+
+    if (!LOVABLE_API_KEY) {
+      console.warn('🧠 No LOVABLE_API_KEY, using heuristic reasoning')
+      return new Response(JSON.stringify({
+        success: true,
+        plan: heuristicReasoning(perception, gameName, objective, Date.now() - startTime)
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    const historyContext = actionHistory && actionHistory.length > 0
+      ? `\n\nRECENT ACTION HISTORY (last ${actionHistory.length} actions):\n${actionHistory.map((a: any, i: number) => `${i+1}. ${a.action} at (${a.coordinates?.x || '?'}, ${a.coordinates?.y || '?'}) → ${a.success ? 'SUCCESS' : 'FAILED'}`).join('\n')}`
+      : ''
+
+    const systemPrompt = `You are the REASONING ENGINE of SIMA 2, an advanced AI game agent.
+You receive PERCEPTION DATA (what the agent sees) and must produce a MULTI-STEP ACTION PLAN.
+
+THINK STEP BY STEP using chain-of-thought reasoning:
+1. Assess the current game state from perception data
+2. Identify the objective and sub-goals
+3. Plan 2-5 concrete actions to achieve the next sub-goal
+4. Consider what could go wrong and plan alternatives
+
+GAME: ${gameName}
+OBJECTIVE: ${objective}
+${historyContext}
+
+RESPOND WITH ONLY THIS JSON (no markdown):
+{
+  "chainOfThought": "Step-by-step reasoning about what I see and what to do...",
+  "currentAssessment": "One sentence summary of the current situation",
+  "steps": [
+    {
+      "id": 1,
+      "thought": "Why I'm doing this action",
+      "action": { "type": "tap|swipe|wait|dismiss", "coordinates": { "x": 360, "y": 640 }, "swipeDirection": "up|down|left|right" },
+      "expectedOutcome": "What should happen after this action",
+      "confidence": 0.85
+    }
+  ],
+  "overallConfidence": 0.8,
+  "estimatedDurationMs": 5000,
+  "alternativeStrategy": "What to do if the primary plan fails"
+}
+
+RULES:
+- Each step must have a clear THOUGHT explaining the reasoning
+- Coordinates must be within screen bounds (720x1280)
+- Use "wait" type for steps that require the game to animate/load
+- Set null for action if the step is observational only
+- Chain of thought should show your FULL reasoning process
+- Consider the action history to avoid repeating failed actions`
+
+    const perceptionSummary = JSON.stringify({
+      gameState: perception.sceneUnderstanding?.gameState,
+      gamePhase: perception.sceneUnderstanding?.gamePhase,
+      confidence: perception.sceneUnderstanding?.confidence,
+      elements: perception.detectedElements?.map((e: any) => ({
+        type: e.type, label: e.label, actionable: e.actionable,
+        pos: `(${e.boundingBox?.x},${e.boundingBox?.y})`
+      })),
+      screenText: perception.screenText,
+      suggestedAction: perception.suggestedAction,
+    })
+
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-3-flash-preview',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `PERCEPTION DATA:\n${perceptionSummary}\n\nGenerate a multi-step action plan with chain-of-thought reasoning.`
+          }
+        ],
+        max_tokens: 2000,
+        temperature: 0.3
+      }),
+      signal: AbortSignal.timeout(30000)
+    })
+
+    if (!response.ok) {
+      const status = response.status
+      if (status === 429) {
+        return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded. Please try again later.' }), {
+          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      if (status === 402) {
+        return new Response(JSON.stringify({ success: false, error: 'Payment required. Please add credits to your workspace.' }), {
+          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      console.error('Gemini reasoning error:', status)
+      return new Response(JSON.stringify({
+        success: true,
+        plan: heuristicReasoning(perception, gameName, objective, Date.now() - startTime)
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    const result = await response.json()
+    const content = result.choices?.[0]?.message?.content || ''
+    console.log('🧠 Gemini reasoning response:', content.substring(0, 300))
+
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0])
+        const processingTimeMs = Date.now() - startTime
+
+        const plan = {
+          timestamp: new Date().toISOString(),
+          objective,
+          chainOfThought: parsed.chainOfThought || 'No chain of thought provided',
+          currentAssessment: parsed.currentAssessment || 'Unable to assess',
+          steps: (parsed.steps || []).map((s: any, i: number) => ({
+            id: s.id || i + 1,
+            thought: s.thought || 'No reasoning provided',
+            action: s.action ? {
+              type: s.action.type || 'tap',
+              coordinates: s.action.coordinates ? {
+                x: Math.max(0, Math.min(720, s.action.coordinates.x)),
+                y: Math.max(0, Math.min(1280, s.action.coordinates.y)),
+              } : undefined,
+              swipeDirection: s.action.swipeDirection || undefined,
+              duration: s.action.duration || undefined,
+            } : null,
+            expectedOutcome: s.expectedOutcome || 'Unknown outcome',
+            confidence: Math.min(1, Math.max(0, s.confidence || 0.5)),
+            status: 'pending',
+          })),
+          overallConfidence: Math.min(1, Math.max(0, parsed.overallConfidence || 0.5)),
+          estimatedDurationMs: parsed.estimatedDurationMs || 5000,
+          alternativeStrategy: parsed.alternativeStrategy || null,
+          processingTimeMs,
+        }
+
+        console.log(`🧠 REASON: Plan generated in ${processingTimeMs}ms — ${plan.steps.length} steps, confidence: ${plan.overallConfidence}`)
+
+        return new Response(JSON.stringify({ success: true, plan }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      } catch (parseError) {
+        console.error('Reasoning JSON parse error:', parseError)
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      plan: heuristicReasoning(perception, gameName, objective, Date.now() - startTime)
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  } catch (error) {
+    console.error('🧠 REASON ERROR:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+function heuristicReasoning(perception: any, gameName: string, objective: string, processingTimeMs: number) {
+  const gameState = perception?.sceneUnderstanding?.gameState || 'unknown'
+  const suggestedAction = perception?.suggestedAction
+
+  const steps = []
+
+  if (gameState === 'menu') {
+    steps.push({
+      id: 1, thought: 'Screen appears to be a menu. Need to find and tap the play/start button.',
+      action: { type: 'tap', coordinates: { x: 360, y: 700 } },
+      expectedOutcome: 'Game should transition from menu to gameplay',
+      confidence: 0.5, status: 'pending',
+    })
+  } else if (gameState === 'playing' && suggestedAction) {
+    steps.push({
+      id: 1, thought: `Following perception suggestion: ${suggestedAction.reasoning}`,
+      action: { type: suggestedAction.type, coordinates: suggestedAction.coordinates },
+      expectedOutcome: 'Game state should progress',
+      confidence: suggestedAction.confidence || 0.4, status: 'pending',
+    })
+    steps.push({
+      id: 2, thought: 'Wait for animation/transition to complete',
+      action: { type: 'wait', duration: 500 },
+      expectedOutcome: 'Game animations settle',
+      confidence: 0.9, status: 'pending',
+    })
+  } else {
+    steps.push({
+      id: 1, thought: 'Uncertain game state. Tapping center to interact.',
+      action: { type: 'tap', coordinates: { x: 360, y: 640 } },
+      expectedOutcome: 'Some game response',
+      confidence: 0.3, status: 'pending',
+    })
+  }
+
+  return {
+    timestamp: new Date().toISOString(),
+    objective,
+    chainOfThought: `Heuristic reasoning (no AI): Game state is "${gameState}". Using basic rules to decide next action.`,
+    currentAssessment: `Game is in "${gameState}" state. Using heuristic fallback.`,
+    steps,
+    overallConfidence: 0.3,
+    estimatedDurationMs: 2000,
+    alternativeStrategy: 'Tap random positions if current approach fails',
+    processingTimeMs,
   }
 }
 
