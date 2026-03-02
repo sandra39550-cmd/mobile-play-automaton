@@ -15,6 +15,16 @@ import { useState } from "react";
 interface ReasoningViewProps {
   perception: PerceptionResult | null;
   gameName?: string;
+  reasoningHook?: {
+    currentPlan: ReasoningPlan | null;
+    planHistory: ReasoningPlan[];
+    isReasoning: boolean;
+    error: string | null;
+    reason: (perception: PerceptionResult, gameName: string, objective?: string) => Promise<ReasoningPlan | null>;
+    markStepStatus: (stepId: number, status: ReasoningStep['status']) => void;
+    recordAction: (entry: any) => void;
+    clearPlan: () => void;
+  };
 }
 
 const stepStatusConfig: Record<ReasoningStep['status'], { icon: React.ReactNode; color: string }> = {
@@ -25,8 +35,9 @@ const stepStatusConfig: Record<ReasoningStep['status'], { icon: React.ReactNode;
   skipped: { icon: <ArrowRight className="w-3.5 h-3.5" />, color: "text-muted-foreground border-muted" },
 };
 
-export const ReasoningView = ({ perception, gameName }: ReasoningViewProps) => {
-  const { currentPlan, planHistory, isReasoning, error, reason, clearPlan } = useReasoning();
+export const ReasoningView = ({ perception, gameName, reasoningHook }: ReasoningViewProps) => {
+  const internalHook = useReasoning();
+  const { currentPlan, planHistory, isReasoning, error, reason, clearPlan } = reasoningHook || internalHook;
   const [showChainOfThought, setShowChainOfThought] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [customObjective, setCustomObjective] = useState("");

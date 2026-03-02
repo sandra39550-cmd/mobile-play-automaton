@@ -5,7 +5,9 @@ import { DeviceConnection } from "./DeviceConnection";
 import { QuickStartGuide } from "./QuickStartGuide";
 import { PerceptionView } from "./PerceptionView";
 import { ReasoningView } from "./ReasoningView";
+import { ActionExecutionView } from "./ActionExecutionView";
 import { usePerception } from "@/hooks/usePerception";
+import { useReasoning } from "@/hooks/useReasoning";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +24,7 @@ export const GameBotDashboard = () => {
   const { devices, sessions, checkAllDeviceStatus, loadDevices } = useDeviceAutomation();
   const { games, deviceGames, isLoading, handleGameStatusChange, addGameSession, getAvailableGamesForDevice, scanGamesOnDevice, getStats } = useGameManagement();
   const { latestPerception, isPerceiving, perceive, perceptionHistory, error: perceptionError, clearHistory } = usePerception();
+  const { currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan } = useReasoning();
   const [currentTab, setCurrentTab] = useState("bots");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -435,6 +438,15 @@ export const GameBotDashboard = () => {
             <ReasoningView
               perception={latestPerception}
               gameName={perceptionGameName}
+              reasoningHook={{ currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan }}
+            />
+
+            {/* Agent Action Execution Panel */}
+            <ActionExecutionView
+              plan={currentPlan}
+              deviceId={perceptionDeviceId}
+              onStepUpdate={markStepStatus}
+              onRecordAction={recordAction}
             />
           </TabsContent>
           
