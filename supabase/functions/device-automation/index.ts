@@ -171,6 +171,8 @@ serve(async (req) => {
         return await perceiveScene(supabaseClient, payload.deviceId, payload.gameName)
       case 'reason':
         return await reasonAboutScene(supabaseClient, payload.perception, payload.gameName, payload.objective, payload.actionHistory)
+      case 'execute_step':
+        return await executeStep(supabaseClient, payload.step, payload.deviceId, payload.sessionId)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -1730,38 +1732,155 @@ function heuristicReasoning(perception: any, gameName: string, objective: string
   }
 }
 
+// ============ ACTION EXECUTION (SIMA 2 Phase 3) ============
+
+async function executeStep(supabaseClient: any, step: any, deviceId: string, sessionId?: string) {
+  const startTime = Date.now()
+  console.log(`⚡ EXECUTE STEP ${step.id}: ${step.action?.type} on device ${deviceId}`)
+
+  try {
+    // Resolve device
+    let device = null
+    const { data: deviceById } = await supabaseClient
+      .from('devices').select('*').eq('id', deviceId).maybeSingle()
+    if (deviceById) {
+      device = deviceById
+    } else {
+      const { data: deviceByHwId } = await supabaseClient
+        .from('devices').select('*').eq('device_id', deviceId).maybeSingle()
+      device = deviceByHwId
+    }
+
+    if (!device) throw new Error('Device not found')
+    if (device.status !== 'online') throw new Error('Device is offline')
+
+    const hwDeviceId = device.device_id
+    const adbServerUrl = await getAdbServerUrl(supabaseClient)
+    const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
+
+    if (!step.action) {
+      return new Response(JSON.stringify({ success: true, executionTimeMs: 0, verificationResult: 'Observational step — no action taken' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const actionType = step.action.type
+
+    // Handle wait
+    if (actionType === 'wait') {
+      const dur = step.action.duration || 500
+      await new Promise(r => setTimeout(r, dur))
+      return new Response(JSON.stringify({ success: true, executionTimeMs: dur, verificationResult: `Waited ${dur}ms` }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Build ADB action
+    const adbAction: DeviceAction = {
+      type: actionType === 'dismiss' ? 'tap' : actionType,
+      deviceId: hwDeviceId,
+    }
+
+    if (step.action.coordinates) {
+      adbAction.coordinates = {
+        x: Math.max(0, Math.min(720, step.action.coordinates.x)),
+        y: Math.max(0, Math.min(1280, step.action.coordinates.y)),
+      }
+    }
+    if (step.action.swipeDirection) {
+      adbAction.swipeDirection = step.action.swipeDirection
+    }
+
+    // Execute action
+    const actionResult = await executeRealAction(baseUrl, adbAction)
+    const actionTimeMs = Date.now() - startTime
+
+    if (!actionResult.success) {
+      // Log to bot_actions if session
+      if (sessionId) {
+        await supabaseClient.from('bot_actions').insert({
+          session_id: sessionId,
+          action_type: actionType,
+          coordinates: step.action.coordinates || null,
+          success: false,
+          execution_time_ms: actionTimeMs,
+        })
+      }
+      return new Response(JSON.stringify({ success: false, error: 'ADB action failed', executionTimeMs: actionTimeMs }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Post-action verification: take screenshot and quick check
+    let verificationScreenshot = ''
+    let verificationResult = 'Action executed'
+
+    try {
+      await new Promise(r => setTimeout(r, 400)) // Wait for screen to update
+      const screenshot = await takeRealScreenshot(baseUrl, hwDeviceId)
+      if (screenshot && screenshot.length > 500) {
+        verificationScreenshot = screenshot.substring(0, 200) + '...'
+        verificationResult = `Action '${actionType}' executed successfully — screen captured for verification (${screenshot.length} chars)`
+      }
+    } catch (verifyErr) {
+      console.warn('Verification screenshot failed:', verifyErr)
+      verificationResult = `Action executed but verification screenshot failed`
+    }
+
+    // Log to bot_actions
+    if (sessionId) {
+      await supabaseClient.from('bot_actions').insert({
+        session_id: sessionId,
+        action_type: actionType,
+        coordinates: step.action.coordinates || null,
+        success: true,
+        execution_time_ms: Date.now() - startTime,
+      })
+    }
+
+    const totalTimeMs = Date.now() - startTime
+    console.log(`✅ STEP ${step.id} complete in ${totalTimeMs}ms`)
+
+    return new Response(JSON.stringify({
+      success: true,
+      executionTimeMs: totalTimeMs,
+      verificationScreenshot,
+      verificationResult,
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error(`❌ STEP ${step.id} error:`, error)
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      executionTimeMs: Date.now() - startTime,
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
 // Execute a direct tap action on device
 async function executeTapAction(supabaseClient: any, deviceId: string, x: number, y: number) {
   console.log(`👆 Executing tap at (${x}, ${y}) on device ${deviceId}`)
   
   try {
-    // Try to find device by UUID first, then by hardware ID
     let device = null
     
     const { data: deviceById } = await supabaseClient
-      .from('devices')
-      .select('*')
-      .eq('id', deviceId)
-      .maybeSingle()
+      .from('devices').select('*').eq('id', deviceId).maybeSingle()
     
     if (deviceById) {
       device = deviceById
     } else {
       const { data: deviceByHwId } = await supabaseClient
-        .from('devices')
-        .select('*')
-        .eq('device_id', deviceId)
-        .maybeSingle()
+        .from('devices').select('*').eq('device_id', deviceId).maybeSingle()
       device = deviceByHwId
     }
     
-    if (!device) {
-      throw new Error('Device not found')
-    }
-    
-    if (device.status !== 'online') {
-      throw new Error('Device is offline')
-    }
+    if (!device) throw new Error('Device not found')
+    if (device.status !== 'online') throw new Error('Device is offline')
     
     const adbServerUrl = await getAdbServerUrl(supabaseClient)
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
@@ -1769,7 +1888,7 @@ async function executeTapAction(supabaseClient: any, deviceId: string, x: number
     const action: DeviceAction = {
       type: 'tap',
       coordinates: { x, y },
-      deviceId: device.device_id  // Use hardware device ID
+      deviceId: device.device_id
     }
     
     const result = await executeRealAction(baseUrl, action)
