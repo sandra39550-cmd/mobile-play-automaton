@@ -6,8 +6,10 @@ import { QuickStartGuide } from "./QuickStartGuide";
 import { PerceptionView } from "./PerceptionView";
 import { ReasoningView } from "./ReasoningView";
 import { ActionExecutionView } from "./ActionExecutionView";
+import { ExperienceBankView } from "./ExperienceBankView";
 import { usePerception } from "@/hooks/usePerception";
 import { useReasoning } from "@/hooks/useReasoning";
+import { useExperienceBank } from "@/hooks/useExperienceBank";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +27,7 @@ export const GameBotDashboard = () => {
   const { games, deviceGames, isLoading, handleGameStatusChange, addGameSession, getAvailableGamesForDevice, scanGamesOnDevice, getStats } = useGameManagement();
   const { latestPerception, isPerceiving, perceive, perceptionHistory, error: perceptionError, clearHistory } = usePerception();
   const { currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan } = useReasoning();
+  const { experiences, stats: expStats, isEstimating, isLoading: expLoading, lastReward, estimateReward, loadExperiences } = useExperienceBank();
   const [currentTab, setCurrentTab] = useState("bots");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -447,6 +450,31 @@ export const GameBotDashboard = () => {
               deviceId={perceptionDeviceId}
               onStepUpdate={markStepStatus}
               onRecordAction={recordAction}
+              onExecutionComplete={async (results) => {
+                if (currentPlan && perceptionGameName) {
+                  // Auto-estimate reward after execution
+                  await estimateReward(
+                    perceptionGameName,
+                    currentPlan,
+                    results,
+                    latestPerception,
+                    null, // perceptionAfter would come from a re-perceive
+                  );
+                  // Refresh experience list
+                  loadExperiences(perceptionGameName);
+                }
+              }}
+            />
+
+            {/* Agent Experience Bank Panel */}
+            <ExperienceBankView
+              experiences={experiences}
+              stats={expStats}
+              isLoading={expLoading}
+              isEstimating={isEstimating}
+              lastReward={lastReward}
+              gameName={perceptionGameName}
+              onLoadExperiences={loadExperiences}
             />
           </TabsContent>
           
