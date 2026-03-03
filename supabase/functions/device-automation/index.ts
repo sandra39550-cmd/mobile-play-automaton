@@ -173,6 +173,10 @@ serve(async (req) => {
         return await reasonAboutScene(supabaseClient, payload.perception, payload.gameName, payload.objective, payload.actionHistory)
       case 'execute_step':
         return await executeStep(supabaseClient, payload.step, payload.deviceId, payload.sessionId)
+      case 'estimate_reward':
+        return await estimateReward(supabaseClient, payload)
+      case 'retrieve_experiences':
+        return await retrieveExperiences(supabaseClient, payload.gameName, payload.gameState, payload.limit)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -1534,6 +1538,26 @@ async function reasonAboutScene(supabaseClient: any, perception: any, gameName: 
       ? `\n\nRECENT ACTION HISTORY (last ${actionHistory.length} actions):\n${actionHistory.map((a: any, i: number) => `${i+1}. ${a.action} at (${a.coordinates?.x || '?'}, ${a.coordinates?.y || '?'}) → ${a.success ? 'SUCCESS' : 'FAILED'}`).join('\n')}`
       : ''
 
+    // Retrieve past experiences for this game to inform reasoning
+    let experienceContext = ''
+    try {
+      const gameState = perception?.sceneUnderstanding?.gameState || 'unknown'
+      const { data: expData } = await supabaseClient
+        .from('agent_experiences')
+        .select('game_state, objective, reward_score, reward_reasoning, outcome, steps_count')
+        .eq('game_name', gameName)
+        .order('reward_score', { ascending: false })
+        .limit(5)
+
+      if (expData && expData.length > 0) {
+        experienceContext = `\n\nPAST EXPERIENCES (top ${expData.length} by reward):\n${expData.map((e: any, i: number) => 
+          `${i+1}. State: ${e.game_state} | Score: ${e.reward_score}/10 | ${e.outcome} | ${e.steps_count} steps | ${e.reward_reasoning?.substring(0, 80) || 'No notes'}`
+        ).join('\n')}\n\nUse these experiences to improve your strategy. Repeat high-reward patterns and avoid low-reward ones.`
+      }
+    } catch (expErr) {
+      console.warn('Could not load experiences for reasoning:', expErr)
+    }
+
     const systemPrompt = `You are the REASONING ENGINE of SIMA 2, an advanced AI game agent.
 You receive PERCEPTION DATA (what the agent sees) and must produce a MULTI-STEP ACTION PLAN.
 
@@ -1546,6 +1570,7 @@ THINK STEP BY STEP using chain-of-thought reasoning:
 GAME: ${gameName}
 OBJECTIVE: ${objective}
 ${historyContext}
+${experienceContext}
 
 RESPOND WITH ONLY THIS JSON (no markdown):
 {
@@ -1906,6 +1931,205 @@ async function executeTapAction(supabaseClient: any, deviceId: string, x: number
       success: false, 
       error: error.message 
     }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+// ============ SELF-IMPROVEMENT LOOP (SIMA 2 Phase 4) ============
+
+async function estimateReward(supabaseClient: any, payload: any) {
+  const startTime = Date.now()
+  const { gameName, gameState, objective, actionSequence, executionResults, perceptionBefore, perceptionAfter } = payload
+
+  console.log(`🏆 REWARD: Estimating reward for ${gameName}, ${actionSequence?.length || 0} actions`)
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+
+    // Calculate basic metrics
+    const totalActions = executionResults?.length || 0
+    const successfulActions = executionResults?.filter((r: any) => r.status === 'completed')?.length || 0
+    const totalExecutionMs = executionResults?.reduce((s: number, r: any) => s + (r.executionTimeMs || 0), 0) || 0
+    const successRate = totalActions > 0 ? successfulActions / totalActions : 0
+
+    let rewardScore = successRate * 5 // Base: 0-5 from success rate
+    let rewardReasoning = `Base reward from success rate: ${(successRate * 100).toFixed(0)}% (${successfulActions}/${totalActions} actions)`
+    let outcome = successRate >= 0.8 ? 'success' : successRate >= 0.5 ? 'partial' : 'failure'
+
+    // If we have AI, do a richer reward estimation
+    if (LOVABLE_API_KEY && perceptionBefore && perceptionAfter) {
+      try {
+        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-3-flash-preview',
+            messages: [
+              {
+                role: 'system',
+                content: `You are a reward estimation model for a game-playing AI agent.
+Compare the BEFORE and AFTER game states to estimate how much progress the agent made.
+
+Score from 0.0 to 10.0:
+- 0-2: Actions were harmful or no progress
+- 3-4: Minimal progress, mostly neutral
+- 5-6: Some progress toward objective
+- 7-8: Good progress, meaningful advancement
+- 9-10: Excellent, significant milestone achieved
+
+RESPOND WITH ONLY JSON:
+{
+  "rewardScore": 7.5,
+  "reasoning": "Why this score...",
+  "outcome": "success|partial|failure",
+  "learnings": "What the agent should remember for next time"
+}`
+              },
+              {
+                role: 'user',
+                content: `GAME: ${gameName}
+OBJECTIVE: ${objective || 'Play optimally'}
+ACTIONS TAKEN: ${JSON.stringify(actionSequence?.map((a: any) => ({ type: a.action?.type, coords: a.action?.coordinates })) || [])}
+SUCCESS RATE: ${(successRate * 100).toFixed(0)}%
+
+BEFORE STATE:
+- Game phase: ${perceptionBefore?.sceneUnderstanding?.gamePhase || 'unknown'}
+- Game state: ${perceptionBefore?.sceneUnderstanding?.gameState || 'unknown'}
+- Screen text: ${JSON.stringify(perceptionBefore?.screenText?.slice(0, 5) || [])}
+
+AFTER STATE:
+- Game phase: ${perceptionAfter?.sceneUnderstanding?.gamePhase || 'unknown'}
+- Game state: ${perceptionAfter?.sceneUnderstanding?.gameState || 'unknown'}
+- Screen text: ${JSON.stringify(perceptionAfter?.screenText?.slice(0, 5) || [])}
+
+Estimate the reward.`
+              }
+            ],
+            max_tokens: 500,
+            temperature: 0.2,
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          const content = result.choices?.[0]?.message?.content || ''
+          const jsonMatch = content.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0])
+            rewardScore = Math.min(10, Math.max(0, parsed.rewardScore || rewardScore))
+            rewardReasoning = parsed.reasoning || rewardReasoning
+            outcome = parsed.outcome || outcome
+            if (parsed.learnings) {
+              rewardReasoning += `\n\nLearnings: ${parsed.learnings}`
+            }
+          }
+        }
+      } catch (aiErr) {
+        console.warn('AI reward estimation failed, using heuristic:', aiErr)
+      }
+    }
+
+    // Store experience in database
+    const experienceData = {
+      game_name: gameName,
+      game_state: gameState || 'unknown',
+      objective: objective || 'Play optimally',
+      action_sequence: actionSequence || [],
+      reward_score: rewardScore,
+      reward_reasoning: rewardReasoning,
+      outcome,
+      perception_summary: {
+        before: perceptionBefore ? {
+          gameState: perceptionBefore.sceneUnderstanding?.gameState,
+          gamePhase: perceptionBefore.sceneUnderstanding?.gamePhase,
+        } : null,
+        after: perceptionAfter ? {
+          gameState: perceptionAfter.sceneUnderstanding?.gameState,
+          gamePhase: perceptionAfter.sceneUnderstanding?.gamePhase,
+        } : null,
+      },
+      steps_count: totalActions,
+      total_execution_ms: totalExecutionMs,
+      success: outcome === 'success',
+    }
+
+    const { data: experience, error: insertError } = await supabaseClient
+      .from('agent_experiences')
+      .insert(experienceData)
+      .select()
+      .single()
+
+    if (insertError) {
+      console.error('Failed to store experience:', insertError)
+    }
+
+    const processingTimeMs = Date.now() - startTime
+    console.log(`🏆 REWARD: Score ${rewardScore.toFixed(1)}/10, outcome: ${outcome}, stored in ${processingTimeMs}ms`)
+
+    return new Response(JSON.stringify({
+      success: true,
+      rewardScore,
+      rewardReasoning,
+      outcome,
+      experienceId: experience?.id,
+      processingTimeMs,
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('🏆 REWARD ERROR:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+async function retrieveExperiences(supabaseClient: any, gameName: string, gameState?: string, limit?: number) {
+  console.log(`📚 RETRIEVE: Fetching experiences for ${gameName}, state: ${gameState || 'any'}`)
+
+  try {
+    let query = supabaseClient
+      .from('agent_experiences')
+      .select('*')
+      .eq('game_name', gameName)
+      .order('reward_score', { ascending: false })
+      .limit(limit || 10)
+
+    if (gameState && gameState !== 'unknown') {
+      query = query.eq('game_state', gameState)
+    }
+
+    const { data: experiences, error } = await query
+
+    if (error) throw error
+
+    // Compute aggregate stats
+    const total = experiences?.length || 0
+    const avgReward = total > 0 ? experiences.reduce((s: number, e: any) => s + Number(e.reward_score), 0) / total : 0
+    const successCount = experiences?.filter((e: any) => e.success)?.length || 0
+
+    console.log(`📚 RETRIEVE: Found ${total} experiences, avg reward: ${avgReward.toFixed(1)}, success rate: ${total > 0 ? ((successCount / total) * 100).toFixed(0) : 0}%`)
+
+    return new Response(JSON.stringify({
+      success: true,
+      experiences: experiences || [],
+      stats: {
+        total,
+        avgReward: Number(avgReward.toFixed(2)),
+        successRate: total > 0 ? Number(((successCount / total) * 100).toFixed(1)) : 0,
+        bestScore: experiences?.[0]?.reward_score || 0,
+      },
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('📚 RETRIEVE ERROR:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }

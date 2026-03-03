@@ -17,6 +17,7 @@ interface ActionExecutionViewProps {
   sessionId?: string;
   onStepUpdate?: (stepId: number, status: ReasoningStep['status']) => void;
   onRecordAction?: (entry: { action: string; coordinates?: { x: number; y: number }; success: boolean; timestamp: string }) => void;
+  onExecutionComplete?: (results: StepExecutionResult[]) => void;
 }
 
 const statusConfig = {
@@ -27,7 +28,7 @@ const statusConfig = {
   paused: { label: 'Aborted', color: 'text-yellow-500 border-yellow-500', icon: <Square className="w-4 h-4" /> },
 };
 
-export const ActionExecutionView = ({ plan, deviceId, sessionId, onStepUpdate, onRecordAction }: ActionExecutionViewProps) => {
+export const ActionExecutionView = ({ plan, deviceId, sessionId, onStepUpdate, onRecordAction, onExecutionComplete }: ActionExecutionViewProps) => {
   const { executionState, executePlan, abortExecution, resetExecution } = useActionExecution();
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
 
@@ -53,6 +54,11 @@ export const ActionExecutionView = ({ plan, deviceId, sessionId, onStepUpdate, o
           });
         }
       }
+    }
+
+    // Notify parent for reward estimation
+    if (results) {
+      onExecutionComplete?.(results);
     }
   };
 
