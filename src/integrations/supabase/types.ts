@@ -38,6 +38,75 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_experiences: {
+        Row: {
+          action_sequence: Json
+          created_at: string
+          device_id: string | null
+          game_name: string
+          game_state: string
+          id: string
+          objective: string | null
+          outcome: string | null
+          perception_summary: Json | null
+          reward_reasoning: string | null
+          reward_score: number
+          session_id: string | null
+          steps_count: number
+          success: boolean
+          total_execution_ms: number
+        }
+        Insert: {
+          action_sequence?: Json
+          created_at?: string
+          device_id?: string | null
+          game_name: string
+          game_state?: string
+          id?: string
+          objective?: string | null
+          outcome?: string | null
+          perception_summary?: Json | null
+          reward_reasoning?: string | null
+          reward_score?: number
+          session_id?: string | null
+          steps_count?: number
+          success?: boolean
+          total_execution_ms?: number
+        }
+        Update: {
+          action_sequence?: Json
+          created_at?: string
+          device_id?: string | null
+          game_name?: string
+          game_state?: string
+          id?: string
+          objective?: string | null
+          outcome?: string | null
+          perception_summary?: Json | null
+          reward_reasoning?: string | null
+          reward_score?: number
+          session_id?: string | null
+          steps_count?: number
+          success?: boolean
+          total_execution_ms?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_experiences_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_experiences_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "bot_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bot_actions: {
         Row: {
           action_type: string
