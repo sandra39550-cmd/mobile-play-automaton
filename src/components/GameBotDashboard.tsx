@@ -7,15 +7,18 @@ import { PerceptionView } from "./PerceptionView";
 import { ReasoningView } from "./ReasoningView";
 import { ActionExecutionView } from "./ActionExecutionView";
 import { ExperienceBankView } from "./ExperienceBankView";
+import { AutoPilotControl } from "./AutoPilotControl";
+import { LiveScreenPreview } from "./LiveScreenPreview";
 import { usePerception } from "@/hooks/usePerception";
 import { useReasoning } from "@/hooks/useReasoning";
 import { useExperienceBank } from "@/hooks/useExperienceBank";
+import { useActionExecution } from "@/hooks/useActionExecution";
+import { useAutoPilot } from "@/hooks/useAutoPilot";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Search, Filter, Bot, Smartphone, Play, RefreshCw, Scan } from "lucide-react";
+import { Plus, Search, Bot, Smartphone, Play, RefreshCw, Scan, Orbit, Eye, Brain, Zap, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
@@ -28,6 +31,19 @@ export const GameBotDashboard = () => {
   const { latestPerception, isPerceiving, perceive, perceptionHistory, error: perceptionError, clearHistory } = usePerception();
   const { currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan } = useReasoning();
   const { experiences, stats: expStats, isEstimating, isLoading: expLoading, lastReward, estimateReward, loadExperiences } = useExperienceBank();
+  const { executePlan } = useActionExecution();
+  
+  // Auto-Pilot
+  const autoPilot = useAutoPilot({
+    perceive,
+    reason,
+    executePlan,
+    estimateReward,
+    markStepStatus,
+    recordAction,
+    loadExperiences,
+  });
+
   const [currentTab, setCurrentTab] = useState("bots");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -40,16 +56,14 @@ export const GameBotDashboard = () => {
   // Auto-scan when dialog opens if we have online devices
   useEffect(() => {
     if (showAddGame && onlineDevices.length > 0 && !selectedDevice) {
-      // Auto-select first online device and scan it
       const firstOnline = onlineDevices[0];
       handleDeviceSelect(firstOnline.id);
     }
   }, [showAddGame]);
 
-
   const categories = ["all", "Strategy", "Puzzle", "Adventure", "Casino", "Battle Royale", "Endless Runner"];
   const onlineDevices = devices.filter(d => d.status === 'online');
-  const availableDevices = devices; // Show all devices, not just online ones
+  const availableDevices = devices;
   const stats = getStats();
   const availableGamesForDevice = selectedDevice ? getAvailableGamesForDevice(selectedDevice) : [];
 
@@ -66,78 +80,47 @@ export const GameBotDashboard = () => {
   });
 
   const handleDeviceSelect = async (deviceId: string) => {
-    console.log('🎯 handleDeviceSelect called with deviceId:', deviceId);
     setSelectedDevice(deviceId);
     setSelectedGame("");
     setScanError(null);
     
     const device = availableDevices.find(d => d.id === deviceId);
-    console.log('📱 Found device:', device);
+    if (!device) { toast.error('Device not found'); return; }
     
-    if (!device) {
-      toast.error('Device not found');
-      return;
-    }
-    
-    // Check device status before scanning
     if (device.status === 'offline') {
-      console.log('❌ Device is offline, aborting scan');
-      toast.error(`❌ ${device.name} is OFFLINE\n\nPlease:\n1. Connect device via USB\n2. Enable USB debugging\n3. Run: adb devices\n4. Ensure ADB server is running on localhost:3000`, { duration: 8000 });
+      toast.error(`❌ ${device.name} is OFFLINE`, { duration: 8000 });
       return;
     }
     
-    console.log('✅ Device is online, starting scan...');
     setIsScanning(true);
-    toast.loading(`🔍 Scanning ${device.name} for installed games via ADB...`, { id: 'scan-games' });
+    toast.loading(`🔍 Scanning ${device.name} for games...`, { id: 'scan-games' });
     
     try {
-      console.log('🔍 Calling scanGamesOnDevice...');
       const scannedGames = await scanGamesOnDevice(deviceId);
-      console.log('📦 Scan result:', scannedGames);
-      
       if (scannedGames && scannedGames.length > 0) {
-        console.log(`✅ Found ${scannedGames.length} games:`, scannedGames.map(g => g.name));
-        toast.success(`✅ Found ${scannedGames.length} game(s) on ${device.name}`, { id: 'scan-games' });
+        toast.success(`✅ Found ${scannedGames.length} game(s)`, { id: 'scan-games' });
       } else {
-        console.log('⚠️ No games returned from scan');
-        toast.warning(`⚠️ No games found on ${device.name}\n\nPlease ensure:\n1. Games are installed on device\n2. ADB server is running: cd adb-server && node server.js\n3. ngrok is tunneling localhost:3000`, { id: 'scan-games', duration: 10000 });
+        toast.warning(`⚠️ No games found on ${device.name}`, { id: 'scan-games', duration: 10000 });
       }
-    } catch (error) {
-      console.error('❌ Scan error:', error);
-      const errorMsg = error?.message || 'Unknown error';
-      setScanError(errorMsg);
-      
-      if (errorMsg.includes('ADB server is offline')) {
-        toast.error(`🔴 ADB Server Connection Failed\n\n${errorMsg}\n\nTroubleshooting:\n1. Start ADB server: cd adb-server && node server.js\n2. Start ngrok: ngrok http 3000\n3. Update ADB_SERVER_URL with your ngrok URL`, { id: 'scan-games', duration: 15000 });
-      } else if (errorMsg.includes('timeout')) {
-        toast.error(`⏱️ Scan Timeout\n\nADB server took too long to respond. Check your connection.`, { id: 'scan-games', duration: 8000 });
-      } else {
-        toast.error(`❌ Scan Failed: ${errorMsg.substring(0, 100)}`, { id: 'scan-games', duration: 8000 });
-      }
+    } catch (error: any) {
+      setScanError(error?.message || 'Unknown error');
+      toast.error(`❌ Scan Failed: ${(error?.message || '').substring(0, 100)}`, { id: 'scan-games', duration: 8000 });
     } finally {
       setIsScanning(false);
     }
   };
 
   const handleAddGame = async () => {
-    if (!selectedDevice || !selectedGame) {
-      toast.error('Please select both device and game');
-      return;
-    }
+    if (!selectedDevice || !selectedGame) { toast.error('Please select both device and game'); return; }
     
     const device = availableDevices.find(d => d.id === selectedDevice);
     const gameInfo = availableGamesForDevice.find(g => g.name === selectedGame);
+    if (!gameInfo) { toast.error('Game not found'); return; }
     
-    if (!gameInfo) {
-      toast.error('Game not found');
-      return;
-    }
-    
-    toast.loading(`Starting ${gameInfo.name} on ${device?.name}...`, { id: 'start-game' });
-    
+    toast.loading(`Starting ${gameInfo.name}...`, { id: 'start-game' });
     try {
       await addGameSession(selectedGame, selectedDevice);
-      toast.success(`${gameInfo.name} is now playing on ${device?.name}!`, { id: 'start-game' });
+      toast.success(`${gameInfo.name} is now playing!`, { id: 'start-game' });
       setShowAddGame(false);
       setSelectedDevice("");
       setSelectedGame("");
@@ -147,29 +130,35 @@ export const GameBotDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-background p-4 md:p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="text-center space-y-4">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <Bot className="w-10 h-10 text-neon-purple animate-pulse-glow" />
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-neon-purple to-neon-blue bg-clip-text text-transparent animate-glow">
+        <div className="text-center space-y-3">
+          <div className="flex items-center justify-center gap-3">
+            <Bot className="w-8 h-8 text-neon-purple animate-pulse-glow" />
+            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-neon-purple to-neon-blue bg-clip-text text-transparent animate-glow">
               SIMA 2 FOR MOBILE GAMES
             </h1>
           </div>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-lg text-muted-foreground">
             Gemini Powered AI Agent For Mobile Gaming
           </p>
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             <Badge variant="outline" className="text-neon-green border-neon-green">
-              {onlineDevices.length} Online Devices
+              {onlineDevices.length} Online
             </Badge>
             <Badge variant="outline" className="text-neon-blue border-neon-blue">
-              {stats.activeBots} Active Agent
+              {stats.activeBots} Active
             </Badge>
             <Badge variant="outline" className="text-neon-pink border-neon-pink">
-              {games.length} Games Available
+              {games.length} Games
             </Badge>
+            {autoPilot.state.isRunning && (
+              <Badge variant="outline" className="text-neon-green border-neon-green animate-pulse">
+                <Orbit className="w-3 h-3 mr-1 animate-spin" style={{ animationDuration: '3s' }} />
+                Auto-Pilot Active
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -179,12 +168,16 @@ export const GameBotDashboard = () => {
           hasDevices={devices.length > 0}
         />
 
-        {/* Main Content */}
+        {/* Main Tabs */}
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 bg-gaming-card border-gaming-border">
+          <TabsList className="grid w-full grid-cols-3 bg-gaming-card border-gaming-border">
             <TabsTrigger value="bots" className="flex items-center gap-2">
               <Bot className="w-4 h-4" />
-              Game Agent
+              Games
+            </TabsTrigger>
+            <TabsTrigger value="agent" className="flex items-center gap-2">
+              <Brain className="w-4 h-4" />
+              Agent Pipeline
             </TabsTrigger>
             <TabsTrigger value="devices" className="flex items-center gap-2">
               <Smartphone className="w-4 h-4" />
@@ -192,11 +185,10 @@ export const GameBotDashboard = () => {
             </TabsTrigger>
           </TabsList>
           
+          {/* GAMES TAB */}
           <TabsContent value="bots" className="space-y-6">
-            {/* Stats Overview */}
             <StatsOverview stats={stats} />
 
-            {/* Controls */}
             <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
               <div className="flex flex-1 gap-4 w-full sm:w-auto">
                 <div className="relative flex-1 max-w-md">
@@ -225,79 +217,54 @@ export const GameBotDashboard = () => {
               <Dialog open={showAddGame} onOpenChange={setShowAddGame}>
                 <DialogTrigger asChild>
                   <Button 
-                    className="bg-neon-green hover:bg-neon-green/80 text-gaming-bg font-bold"
+                    className="bg-neon-green hover:bg-neon-green/80 text-primary-foreground font-bold"
                     disabled={availableDevices.length === 0}
                   >
                     <Plus className="w-4 h-4 mr-2" />
-                    Select & Play Game
+                    Select & Play
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="bg-gaming-card border-gaming-border">
                   <DialogHeader>
                     <DialogTitle className="text-glow">Choose Device & Play Game</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
-                      Select your connected device and choose a game to start playing automatically
+                      Select your connected device and choose a game to start playing
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
+                    {/* Device Select */}
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium">Step 1: Select Your Device</label>
+                        <label className="text-sm font-medium">Step 1: Select Device</label>
                         <div className="flex gap-2">
                           {selectedDevice && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeviceSelect(selectedDevice)}
-                              disabled={isScanning}
-                              className="h-8 gap-1.5"
-                            >
+                            <Button variant="outline" size="sm" onClick={() => handleDeviceSelect(selectedDevice)} disabled={isScanning} className="h-8 gap-1.5">
                               <Scan className="w-3.5 h-3.5" />
-                              {isScanning ? 'Scanning...' : 'Scan Games'}
+                              {isScanning ? 'Scanning...' : 'Scan'}
                             </Button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={async () => {
-                              toast.loading('Checking device status...', { id: 'refresh-status' });
-                              await checkAllDeviceStatus();
-                              await loadDevices();
-                              toast.success('Device status updated', { id: 'refresh-status' });
-                            }}
-                            className="h-8 gap-1.5"
-                          >
+                          <Button variant="ghost" size="sm" onClick={async () => {
+                            toast.loading('Checking status...', { id: 'refresh-status' });
+                            await checkAllDeviceStatus();
+                            await loadDevices();
+                            toast.success('Updated', { id: 'refresh-status' });
+                          }} className="h-8 gap-1.5">
                             <RefreshCw className="w-3.5 h-3.5" />
-                            Refresh
                           </Button>
                         </div>
                       </div>
                       <Select value={selectedDevice} onValueChange={handleDeviceSelect}>
-                        <SelectTrigger className="bg-gaming-card border-gaming-border h-12 hover:bg-gaming-hover">
+                        <SelectTrigger className="bg-gaming-card border-gaming-border h-12">
                           <SelectValue placeholder="Choose your mobile device" />
                         </SelectTrigger>
-                        <SelectContent className="bg-gaming-card border-gaming-border z-[200] max-h-[300px]">
+                        <SelectContent className="bg-gaming-card border-gaming-border z-[200]">
                           {availableDevices.map((device) => (
-                            <SelectItem 
-                              key={device.id} 
-                              value={device.id} 
-                              className="cursor-pointer hover:bg-gaming-hover focus:bg-gaming-hover bg-gaming-card"
-                              disabled={device.status === 'offline'}
-                            >
+                            <SelectItem key={device.id} value={device.id} disabled={device.status === 'offline'}>
                               <div className="flex items-center gap-2">
                                 <Smartphone className={`w-4 h-4 ${device.status === 'offline' ? 'text-muted-foreground' : 'text-neon-green'}`} />
-                                <span className={`font-medium ${device.status === 'offline' ? 'text-muted-foreground line-through' : ''}`}>
-                                  {device.name}
-                                </span>
-                                <Badge 
-                                  variant="outline" 
-                                  className={
-                                    device.status === 'online' 
-                                      ? 'text-neon-green border-neon-green bg-neon-green/10' 
-                                      : 'text-red-500 border-red-500 bg-red-500/10'
-                                  }
-                                >
-                                  {device.status === 'online' ? '🟢 Online' : '🔴 Offline'}
+                                <span className={device.status === 'offline' ? 'text-muted-foreground' : ''}>{device.name}</span>
+                                <Badge variant="outline" className={device.status === 'online' ? 'text-neon-green border-neon-green' : 'text-destructive border-destructive'}>
+                                  {device.status === 'online' ? '🟢' : '🔴'} {device.status}
                                 </Badge>
                               </div>
                             </SelectItem>
@@ -305,92 +272,38 @@ export const GameBotDashboard = () => {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {/* Game Select */}
                     <div>
                       <label className="text-sm font-medium mb-2 block">
-                        Step 2: Select Game from Device
-                        {selectedDevice && deviceGames[selectedDevice] && !isScanning && !scanError && (
-                          <Badge variant="outline" className="ml-2 text-neon-green border-neon-green bg-neon-green/10">
-                            ✅ {availableGamesForDevice.length} games found on {availableDevices.find(d => d.id === selectedDevice)?.name}
-                          </Badge>
-                        )}
-                        {isScanning && (
-                          <Badge variant="outline" className="ml-2 text-neon-blue border-neon-blue animate-pulse">
-                            🔍 Scanning device via ADB...
-                          </Badge>
-                        )}
-                        {scanError && !isScanning && (
-                          <Badge variant="outline" className="ml-2 text-red-500 border-red-500 bg-red-500/10">
-                            ❌ Scan failed
-                          </Badge>
-                        )}
-                        {selectedDevice && !deviceGames[selectedDevice] && !isScanning && !scanError && (
-                          <Badge variant="outline" className="ml-2 text-yellow-500 border-yellow-500 bg-yellow-500/10">
-                            ⏳ Click "Scan Games" button above
-                          </Badge>
-                        )}
+                        Step 2: Select Game
+                        {isScanning && <Badge variant="outline" className="ml-2 text-neon-blue border-neon-blue animate-pulse">🔍 Scanning...</Badge>}
                       </label>
                       <Select value={selectedGame} onValueChange={setSelectedGame} disabled={!selectedDevice || isScanning || availableGamesForDevice.length === 0}>
-                        <SelectTrigger className="bg-gaming-card border-gaming-border h-12 hover:bg-gaming-hover disabled:opacity-50 disabled:cursor-not-allowed">
-                          <SelectValue placeholder={
-                            isScanning ? "🔍 Scanning device..." : 
-                            !selectedDevice ? "Select device first" :
-                            availableGamesForDevice.length === 0 ? "No games found on device" :
-                            "Choose a game"
-                          } />
+                        <SelectTrigger className="bg-gaming-card border-gaming-border h-12">
+                          <SelectValue placeholder={isScanning ? "Scanning..." : !selectedDevice ? "Select device first" : availableGamesForDevice.length === 0 ? "No games found" : "Choose a game"} />
                         </SelectTrigger>
                         <SelectContent className="bg-gaming-card border-gaming-border z-[200] max-h-[400px]">
-                          {availableGamesForDevice.length > 0 ? (
-                            availableGamesForDevice.map((game) => (
-                              <SelectItem 
-                                key={game.packageName} 
-                                value={game.name} 
-                                className="cursor-pointer hover:bg-gaming-hover focus:bg-gaming-hover bg-gaming-card py-3"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <span className="text-2xl">{game.icon}</span>
-                                  <div className="flex flex-col">
-                                    <span className="font-medium text-base">{game.name}</span>
-                                    <span className="text-xs text-muted-foreground">{game.packageName}</span>
-                                  </div>
+                          {availableGamesForDevice.map((game) => (
+                            <SelectItem key={game.packageName} value={game.name} className="py-3">
+                              <div className="flex items-center gap-3">
+                                <span className="text-2xl">{game.icon}</span>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{game.name}</span>
+                                  <span className="text-xs text-muted-foreground">{game.packageName}</span>
                                 </div>
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="no-games" disabled className="bg-gaming-card">
-                              {isScanning ? '🔍 Scanning...' : 
-                               !selectedDevice ? 'Select device first' : 
-                               'No games found'}
+                              </div>
                             </SelectItem>
-                          )}
+                          ))}
                         </SelectContent>
                       </Select>
-                      {selectedDevice && (
-                        <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                          {isScanning 
-                            ? '🔍 Scanning real device via ADB for installed games...'
-                            : deviceGames[selectedDevice] 
-                              ? availableGamesForDevice.length > 0 
-                                ? `📱 Showing ${availableGamesForDevice.length} game(s) from ${availableDevices.find(d => d.id === selectedDevice)?.name}` 
-                                : '⚠️ No games found on this device - install games and try scanning again'
-                              : '⏳ Select device to scan for games'}
-                        </p>
-                      )}
                     </div>
+
                     <div className="flex gap-2 pt-4">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setShowAddGame(false)}
-                        className="flex-1"
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        onClick={handleAddGame}
-                        className="flex-1 bg-neon-green hover:bg-neon-green/80 text-gaming-bg font-bold text-lg"
-                        disabled={!selectedDevice || !selectedGame}
-                      >
+                      <Button variant="outline" onClick={() => setShowAddGame(false)} className="flex-1">Cancel</Button>
+                      <Button onClick={handleAddGame} className="flex-1 bg-neon-green hover:bg-neon-green/80 text-primary-foreground font-bold" disabled={!selectedDevice || !selectedGame}>
                         <Play className="w-5 h-5 mr-2" />
-                        Play Game Now
+                        Play Now
                       </Button>
                     </div>
                   </div>
@@ -401,83 +314,143 @@ export const GameBotDashboard = () => {
             {/* Bot Cards */}
             {isLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[1,2,3,4,5,6].map((i) => (
-                  <div key={i} className="h-64 bg-gaming-card border-gaming-border rounded-lg animate-pulse" />
-                ))}
+                {[1,2,3].map(i => <div key={i} className="h-64 bg-gaming-card border-gaming-border rounded-lg animate-pulse" />)}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredGames.map((game) => (
-                  <BotCard
-                    key={game.id}
-                    game={game}
-                    onStatusChange={handleGameStatusChange}
-                  />
+                  <BotCard key={game.id} game={game} onStatusChange={handleGameStatusChange} />
                 ))}
               </div>
             )}
 
-            {filteredGames.length === 0 && (
+            {filteredGames.length === 0 && !isLoading && (
               <div className="text-center py-12">
                 <Bot className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-xl font-semibold mb-2">No games found</h3>
                 <p className="text-muted-foreground">Try adjusting your search or filters</p>
               </div>
             )}
-
-            {/* Agent Perception Panel */}
-            <PerceptionView 
-              deviceId={perceptionDeviceId}
-              gameName={perceptionGameName}
-              latestPerception={latestPerception}
-              isPerceiving={isPerceiving}
-              onPerceive={() => perceptionDeviceId && perceive(perceptionDeviceId, perceptionGameName)}
-              perceptionHistory={perceptionHistory}
-              error={perceptionError}
-              onClearHistory={clearHistory}
-            />
-
-            {/* Agent Reasoning Panel */}
-            <ReasoningView
-              perception={latestPerception}
-              gameName={perceptionGameName}
-              reasoningHook={{ currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan }}
-            />
-
-            {/* Agent Action Execution Panel */}
-            <ActionExecutionView
-              plan={currentPlan}
-              deviceId={perceptionDeviceId}
-              onStepUpdate={markStepStatus}
-              onRecordAction={recordAction}
-              onExecutionComplete={async (results) => {
-                if (currentPlan && perceptionGameName) {
-                  // Auto-estimate reward after execution
-                  await estimateReward(
-                    perceptionGameName,
-                    currentPlan,
-                    results,
-                    latestPerception,
-                    null, // perceptionAfter would come from a re-perceive
-                  );
-                  // Refresh experience list
-                  loadExperiences(perceptionGameName);
-                }
-              }}
-            />
-
-            {/* Agent Experience Bank Panel */}
-            <ExperienceBankView
-              experiences={experiences}
-              stats={expStats}
-              isLoading={expLoading}
-              isEstimating={isEstimating}
-              lastReward={lastReward}
-              gameName={perceptionGameName}
-              onLoadExperiences={loadExperiences}
-            />
           </TabsContent>
-          
+
+          {/* AGENT PIPELINE TAB */}
+          <TabsContent value="agent" className="space-y-6">
+            {/* Auto-Pilot Control — Top */}
+            <AutoPilotControl
+              state={autoPilot.state}
+              deviceId={perceptionDeviceId}
+              gameName={perceptionGameName}
+              onStart={autoPilot.start}
+              onStop={autoPilot.stop}
+              onSetSpeed={autoPilot.setSpeed}
+              onClearLogs={autoPilot.clearLogs}
+            />
+
+            {/* Two-column layout: Live Screen + Pipeline */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left: Live Screen Preview */}
+              <div className="lg:col-span-1">
+                <LiveScreenPreview
+                  deviceId={perceptionDeviceId}
+                  autoRefresh={autoPilot.state.isRunning}
+                  refreshIntervalMs={8000}
+                />
+              </div>
+
+              {/* Right: Pipeline Panels */}
+              <div className="lg:col-span-2 space-y-4">
+                {/* Phase indicators */}
+                <div className="flex items-center gap-2 px-1">
+                  {[
+                    { icon: Eye, label: 'Perceive', color: 'text-neon-purple', phase: 'perceiving' },
+                    { icon: Brain, label: 'Reason', color: 'text-neon-blue', phase: 'reasoning' },
+                    { icon: Zap, label: 'Execute', color: 'text-neon-pink', phase: 'executing' },
+                    { icon: BookOpen, label: 'Learn', color: 'text-neon-green', phase: 'rewarding' },
+                  ].map((p, i) => (
+                    <div key={p.phase} className="flex items-center gap-1 flex-1">
+                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg flex-1 justify-center text-xs font-semibold border ${
+                        autoPilot.state.currentPhase === p.phase
+                          ? `${p.color} border-current bg-current/5`
+                          : 'text-muted-foreground border-gaming-border'
+                      }`}>
+                        <p.icon className="w-3.5 h-3.5" />
+                        {p.label}
+                      </div>
+                      {i < 3 && <span className="text-muted-foreground/30 text-lg">→</span>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pipeline Panels in Tabs */}
+                <Tabs defaultValue="perception" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4 bg-gaming-card border-gaming-border h-9">
+                    <TabsTrigger value="perception" className="text-xs gap-1">
+                      <Eye className="w-3 h-3" /> Perceive
+                    </TabsTrigger>
+                    <TabsTrigger value="reasoning" className="text-xs gap-1">
+                      <Brain className="w-3 h-3" /> Reason
+                    </TabsTrigger>
+                    <TabsTrigger value="execution" className="text-xs gap-1">
+                      <Zap className="w-3 h-3" /> Execute
+                    </TabsTrigger>
+                    <TabsTrigger value="experience" className="text-xs gap-1">
+                      <BookOpen className="w-3 h-3" /> Learn
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="perception">
+                    <PerceptionView 
+                      deviceId={perceptionDeviceId}
+                      gameName={perceptionGameName}
+                      latestPerception={latestPerception}
+                      isPerceiving={isPerceiving}
+                      onPerceive={() => perceptionDeviceId && perceive(perceptionDeviceId, perceptionGameName)}
+                      perceptionHistory={perceptionHistory}
+                      error={perceptionError}
+                      onClearHistory={clearHistory}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="reasoning">
+                    <ReasoningView
+                      perception={latestPerception}
+                      gameName={perceptionGameName}
+                      reasoningHook={{ currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan }}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="execution">
+                    <ActionExecutionView
+                      plan={currentPlan}
+                      deviceId={perceptionDeviceId}
+                      onStepUpdate={markStepStatus}
+                      onRecordAction={recordAction}
+                      onExecutionComplete={async (results) => {
+                        if (currentPlan && perceptionGameName) {
+                          await estimateReward(perceptionGameName, currentPlan, results, latestPerception, null);
+                          loadExperiences(perceptionGameName);
+                        }
+                      }}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="experience">
+                    <ExperienceBankView
+                      experiences={experiences}
+                      stats={expStats}
+                      isLoading={expLoading}
+                      isEstimating={isEstimating}
+                      lastReward={lastReward}
+                      gameName={perceptionGameName}
+                      onLoadExperiences={loadExperiences}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* DEVICES TAB */}
           <TabsContent value="devices">
             <DeviceConnection />
           </TabsContent>
