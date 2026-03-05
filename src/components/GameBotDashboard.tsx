@@ -9,16 +9,21 @@ import { ActionExecutionView } from "./ActionExecutionView";
 import { ExperienceBankView } from "./ExperienceBankView";
 import { AutoPilotControl } from "./AutoPilotControl";
 import { LiveScreenPreview } from "./LiveScreenPreview";
+import { GameProfilesView } from "./GameProfilesView";
+import { StrategyTemplatesView } from "./StrategyTemplatesView";
+import { AgentPerformanceDashboard } from "./AgentPerformanceDashboard";
 import { usePerception } from "@/hooks/usePerception";
 import { useReasoning } from "@/hooks/useReasoning";
 import { useExperienceBank } from "@/hooks/useExperienceBank";
 import { useActionExecution } from "@/hooks/useActionExecution";
 import { useAutoPilot } from "@/hooks/useAutoPilot";
+import { useGameProfiles } from "@/hooks/useGameProfiles";
+import { useStrategyTemplates } from "@/hooks/useStrategyTemplates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, Bot, Smartphone, Play, RefreshCw, Scan, Orbit, Eye, Brain, Zap, BookOpen } from "lucide-react";
+import { Plus, Search, Bot, Smartphone, Play, RefreshCw, Scan, Orbit, Eye, Brain, Zap, BookOpen, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
@@ -32,6 +37,8 @@ export const GameBotDashboard = () => {
   const { currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan } = useReasoning();
   const { experiences, stats: expStats, isEstimating, isLoading: expLoading, lastReward, estimateReward, loadExperiences } = useExperienceBank();
   const { executePlan } = useActionExecution();
+  const gameProfiles = useGameProfiles();
+  const strategyTemplates = useStrategyTemplates();
   
   // Auto-Pilot
   const autoPilot = useAutoPilot({
@@ -170,7 +177,7 @@ export const GameBotDashboard = () => {
 
         {/* Main Tabs */}
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-gaming-card border-gaming-border">
+          <TabsList className="grid w-full grid-cols-4 bg-gaming-card border-gaming-border">
             <TabsTrigger value="bots" className="flex items-center gap-2">
               <Bot className="w-4 h-4" />
               Games
@@ -178,6 +185,10 @@ export const GameBotDashboard = () => {
             <TabsTrigger value="agent" className="flex items-center gap-2">
               <Brain className="w-4 h-4" />
               Agent Pipeline
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Analytics
             </TabsTrigger>
             <TabsTrigger value="devices" className="flex items-center gap-2">
               <Smartphone className="w-4 h-4" />
@@ -447,6 +458,27 @@ export const GameBotDashboard = () => {
                   </TabsContent>
                 </Tabs>
               </div>
+            </div>
+          </TabsContent>
+
+          {/* ANALYTICS TAB — Phase 6 */}
+          <TabsContent value="analytics" className="space-y-6">
+            <AgentPerformanceDashboard />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <GameProfilesView
+                profiles={gameProfiles.profiles}
+                isLoading={gameProfiles.isLoading}
+                onLoad={gameProfiles.loadProfiles}
+                onUpdateStats={gameProfiles.updateProfileStats}
+              />
+              <StrategyTemplatesView
+                templates={strategyTemplates.templates}
+                isLoading={strategyTemplates.isLoading}
+                isExtracting={strategyTemplates.isExtracting}
+                gameName={perceptionGameName}
+                onLoad={strategyTemplates.loadTemplates}
+                onExtract={strategyTemplates.extractTemplate}
+              />
             </div>
           </TabsContent>
 

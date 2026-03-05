@@ -267,6 +267,111 @@ export type Database = {
         }
         Relationships: []
       }
+      game_profiles: {
+        Row: {
+          avg_reward: number
+          best_reward: number
+          category: string | null
+          config: Json
+          created_at: string
+          game_name: string
+          id: string
+          last_played_at: string | null
+          learned_behaviors: Json
+          package_name: string | null
+          preferred_strategy: string | null
+          success_rate: number
+          total_actions: number
+          total_sessions: number
+          updated_at: string
+        }
+        Insert: {
+          avg_reward?: number
+          best_reward?: number
+          category?: string | null
+          config?: Json
+          created_at?: string
+          game_name: string
+          id?: string
+          last_played_at?: string | null
+          learned_behaviors?: Json
+          package_name?: string | null
+          preferred_strategy?: string | null
+          success_rate?: number
+          total_actions?: number
+          total_sessions?: number
+          updated_at?: string
+        }
+        Update: {
+          avg_reward?: number
+          best_reward?: number
+          category?: string | null
+          config?: Json
+          created_at?: string
+          game_name?: string
+          id?: string
+          last_played_at?: string | null
+          learned_behaviors?: Json
+          package_name?: string | null
+          preferred_strategy?: string | null
+          success_rate?: number
+          total_actions?: number
+          total_sessions?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      strategy_templates: {
+        Row: {
+          action_pattern: Json
+          avg_reward: number
+          created_at: string
+          description: string | null
+          game_state: string
+          id: string
+          is_transferable: boolean
+          name: string
+          preconditions: Json
+          source_game: string
+          tags: string[]
+          times_succeeded: number
+          times_used: number
+          updated_at: string
+        }
+        Insert: {
+          action_pattern?: Json
+          avg_reward?: number
+          created_at?: string
+          description?: string | null
+          game_state?: string
+          id?: string
+          is_transferable?: boolean
+          name: string
+          preconditions?: Json
+          source_game: string
+          tags?: string[]
+          times_succeeded?: number
+          times_used?: number
+          updated_at?: string
+        }
+        Update: {
+          action_pattern?: Json
+          avg_reward?: number
+          created_at?: string
+          description?: string | null
+          game_state?: string
+          id?: string
+          is_transferable?: boolean
+          name?: string
+          preconditions?: Json
+          source_game?: string
+          tags?: string[]
+          times_succeeded?: number
+          times_used?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
