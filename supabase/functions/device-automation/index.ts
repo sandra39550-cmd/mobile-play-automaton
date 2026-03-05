@@ -177,6 +177,10 @@ serve(async (req) => {
         return await estimateReward(supabaseClient, payload)
       case 'retrieve_experiences':
         return await retrieveExperiences(supabaseClient, payload.gameName, payload.gameState, payload.limit)
+      case 'extract_strategy':
+        return await extractStrategy(supabaseClient, payload.gameName)
+      case 'transfer_knowledge':
+        return await transferKnowledge(supabaseClient, payload.targetGame, payload.targetState)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -2129,6 +2133,205 @@ async function retrieveExperiences(supabaseClient: any, gameName: string, gameSt
     })
   } catch (error) {
     console.error('📚 RETRIEVE ERROR:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+// ============ GENERALIZATION & TRANSFER (SIMA 2 Phase 6) ============
+
+async function extractStrategy(supabaseClient: any, gameName: string) {
+  console.log(`📋 EXTRACT: Analyzing high-reward experiences for ${gameName}`)
+
+  try {
+    // Get top experiences for this game
+    const { data: experiences, error } = await supabaseClient
+      .from('agent_experiences')
+      .select('*')
+      .eq('game_name', gameName)
+      .gte('reward_score', 5)
+      .order('reward_score', { ascending: false })
+      .limit(20)
+
+    if (error) throw error
+    if (!experiences || experiences.length === 0) {
+      return new Response(JSON.stringify({ success: true, templatesCreated: 0, templates: [], message: 'No high-reward experiences to extract from' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Group experiences by game_state
+    const stateGroups: Record<string, any[]> = {}
+    for (const exp of experiences) {
+      const state = exp.game_state || 'unknown'
+      if (!stateGroups[state]) stateGroups[state] = []
+      stateGroups[state].push(exp)
+    }
+
+    const templates: any[] = []
+
+    // Try AI-powered extraction
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+
+    if (LOVABLE_API_KEY) {
+      try {
+        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-3-flash-preview',
+            messages: [
+              {
+                role: 'system',
+                content: `You are a strategy extraction model. Analyze game experiences and extract reusable strategy templates.
+
+For each distinct pattern you find, output a JSON object with:
+- name: Short descriptive name
+- description: What this strategy does
+- game_state: Which game state it applies to
+- action_pattern: The sequence of action types and relative positions
+- is_transferable: Whether this could work in other games (e.g., "navigate menus" is transferable, "match specific tiles" is not)
+- tags: Relevant tags like ["menu_navigation", "combat", "resource_collection"]
+
+RESPOND WITH ONLY a JSON array of templates.`
+              },
+              {
+                role: 'user',
+                content: `GAME: ${gameName}
+EXPERIENCES (${experiences.length} total, grouped by state):
+${Object.entries(stateGroups).map(([state, exps]) =>
+  `State "${state}" (${exps.length} experiences, avg reward: ${(exps.reduce((s: number, e: any) => s + Number(e.reward_score), 0) / exps.length).toFixed(1)}):
+${exps.slice(0, 3).map((e: any) => `  - Objective: ${e.objective}, Reward: ${e.reward_score}, Actions: ${JSON.stringify(e.action_sequence?.slice(0, 3))}`).join('\n')}`
+).join('\n\n')}
+
+Extract reusable strategy templates.`
+              }
+            ],
+            max_tokens: 1000,
+            temperature: 0.3,
+          }),
+          signal: AbortSignal.timeout(20000),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          const content = result.choices?.[0]?.message?.content || ''
+          const jsonMatch = content.match(/\[[\s\S]*\]/)
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0])
+            for (const t of parsed) {
+              templates.push(t)
+            }
+          }
+        }
+      } catch (aiErr) {
+        console.warn('AI strategy extraction failed, using heuristic:', aiErr)
+      }
+    }
+
+    // Heuristic fallback: create one template per game state with enough data
+    if (templates.length === 0) {
+      for (const [state, exps] of Object.entries(stateGroups)) {
+        if (exps.length < 2) continue
+        const avgReward = exps.reduce((s: number, e: any) => s + Number(e.reward_score), 0) / exps.length
+        templates.push({
+          name: `${gameName} - ${state} strategy`,
+          description: `Extracted from ${exps.length} experiences in "${state}" state with avg reward ${avgReward.toFixed(1)}`,
+          game_state: state,
+          action_pattern: exps[0].action_sequence?.slice(0, 5) || [],
+          is_transferable: state === 'menu' || state === 'loading',
+          tags: [state, gameName.toLowerCase().replace(/\s+/g, '_')],
+        })
+      }
+    }
+
+    // Store templates
+    let templatesCreated = 0
+    for (const t of templates) {
+      const avgReward = stateGroups[t.game_state]
+        ? stateGroups[t.game_state].reduce((s: number, e: any) => s + Number(e.reward_score), 0) / stateGroups[t.game_state].length
+        : 0
+
+      const { error: insertError } = await supabaseClient
+        .from('strategy_templates')
+        .insert({
+          name: t.name,
+          description: t.description || null,
+          source_game: gameName,
+          game_state: t.game_state || 'any',
+          action_pattern: t.action_pattern || [],
+          is_transferable: t.is_transferable || false,
+          tags: t.tags || [],
+          avg_reward: Number(avgReward.toFixed(2)),
+        })
+
+      if (!insertError) templatesCreated++
+    }
+
+    console.log(`📋 EXTRACT: Created ${templatesCreated} templates from ${experiences.length} experiences`)
+
+    return new Response(JSON.stringify({
+      success: true,
+      templatesCreated,
+      templates,
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('📋 EXTRACT ERROR:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
+async function transferKnowledge(supabaseClient: any, targetGame: string, targetState?: string) {
+  console.log(`🔄 TRANSFER: Finding transferable strategies for ${targetGame}, state: ${targetState || 'any'}`)
+
+  try {
+    // Get transferable templates from OTHER games
+    let query = supabaseClient
+      .from('strategy_templates')
+      .select('*')
+      .eq('is_transferable', true)
+      .neq('source_game', targetGame)
+      .order('avg_reward', { ascending: false })
+      .limit(10)
+
+    if (targetState && targetState !== 'unknown') {
+      query = query.or(`game_state.eq.${targetState},game_state.eq.any`)
+    }
+
+    const { data: templates, error } = await query
+    if (error) throw error
+
+    // Also get the target game's own high-reward experiences for context
+    const { data: targetExperiences } = await supabaseClient
+      .from('agent_experiences')
+      .select('game_state, reward_score, objective')
+      .eq('game_name', targetGame)
+      .order('reward_score', { ascending: false })
+      .limit(5)
+
+    console.log(`🔄 TRANSFER: Found ${templates?.length || 0} transferable templates`)
+
+    return new Response(JSON.stringify({
+      success: true,
+      applicableTemplates: templates || [],
+      targetGameContext: {
+        game: targetGame,
+        state: targetState,
+        existingExperiences: targetExperiences?.length || 0,
+      },
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('🔄 TRANSFER ERROR:', error)
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
