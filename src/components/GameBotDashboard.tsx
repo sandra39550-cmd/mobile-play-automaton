@@ -184,7 +184,7 @@ export const GameBotDashboard = () => {
 
         {/* Main Tabs */}
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-gaming-card border-gaming-border">
+          <TabsList className="grid w-full grid-cols-5 bg-gaming-card border-gaming-border">
             <TabsTrigger value="bots" className="flex items-center gap-2">
               <Bot className="w-4 h-4" />
               Games
@@ -192,6 +192,10 @@ export const GameBotDashboard = () => {
             <TabsTrigger value="agent" className="flex items-center gap-2">
               <Brain className="w-4 h-4" />
               Agent Pipeline
+            </TabsTrigger>
+            <TabsTrigger value="zeroshot" className="flex items-center gap-2">
+              <Rocket className="w-4 h-4" />
+              Zero-Shot
             </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
