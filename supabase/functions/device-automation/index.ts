@@ -2291,6 +2291,166 @@ Extract reusable strategy templates.`
   }
 }
 
+async function zeroShotPlan(supabaseClient: any, perception: any, gameName: string, transferredTemplates: any[]) {
+  const startTime = Date.now()
+  console.log(`🎯 ZERO-SHOT: Planning for unseen game "${gameName}" with ${transferredTemplates?.length || 0} transferred templates`)
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+    if (!LOVABLE_API_KEY) {
+      // Fallback to heuristic
+      return new Response(JSON.stringify({
+        success: true,
+        plan: heuristicReasoning(perception, gameName, 'Play this unseen game using general gaming knowledge', Date.now() - startTime)
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    const templateContext = transferredTemplates?.length > 0
+      ? `\n\nTRANSFERRED STRATEGIES FROM OTHER GAMES:\n${transferredTemplates.map((t: any) =>
+          `- "${t.name}" from ${t.source_game} (reward: ${t.avg_reward}, state: ${t.game_state}): ${t.description || 'No description'}\n  Action pattern: ${JSON.stringify(t.action_pattern?.slice(0, 3))}`
+        ).join('\n')}`
+      : ''
+
+    const systemPrompt = `You are a ZERO-SHOT game playing agent. You have NEVER seen this game before.
+Your job is to figure out how to play an unseen game by:
+1. Analyzing the visual layout and UI elements on screen
+2. Using general gaming knowledge (menus have play buttons, games have interactive elements, etc.)
+3. Applying any transferred strategies from similar games
+
+${templateContext}
+
+You must generate a careful, exploratory action plan. Since this is an unseen game:
+- Start with safe exploratory actions (tapping obvious buttons, dismissing popups)
+- Look for familiar UI patterns (play buttons, X to close, arrows to navigate)
+- Avoid random tapping — be methodical
+- Plan observation steps between actions to check results
+
+RESPOND WITH ONLY a JSON object:
+{
+  "chainOfThought": "Your full reasoning about what you see and what this game might be...",
+  "currentAssessment": "Summary of the unfamiliar game state",
+  "steps": [
+    {
+      "id": 1,
+      "thought": "Why I'm doing this exploratory action",
+      "action": { "type": "tap|swipe|wait|dismiss", "coordinates": { "x": 360, "y": 640 }, "swipeDirection": "up" },
+      "expectedOutcome": "What I expect to learn or achieve",
+      "confidence": 0.5
+    }
+  ],
+  "overallConfidence": 0.4,
+  "estimatedDurationMs": 8000,
+  "alternativeStrategy": "Backup plan if primary approach fails"
+}`
+
+    const perceptionSummary = JSON.stringify({
+      gameState: perception.sceneUnderstanding?.gameState,
+      gamePhase: perception.sceneUnderstanding?.gamePhase,
+      confidence: perception.sceneUnderstanding?.confidence,
+      elements: perception.detectedElements?.map((e: any) => ({
+        type: e.type, label: e.label, actionable: e.actionable,
+        pos: `(${e.boundingBox?.x},${e.boundingBox?.y})`
+      })),
+      screenText: perception.screenText,
+      suggestedAction: perception.suggestedAction,
+    })
+
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-3-flash-preview',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `UNSEEN GAME: ${gameName}\n\nPERCEPTION DATA:\n${perceptionSummary}\n\nGenerate a careful, exploratory zero-shot action plan.`
+          }
+        ],
+        max_tokens: 2000,
+        temperature: 0.4,
+      }),
+      signal: AbortSignal.timeout(30000),
+    })
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
+          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      if (response.status === 402) {
+        return new Response(JSON.stringify({ success: false, error: 'Payment required' }), {
+          status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+      return new Response(JSON.stringify({
+        success: true,
+        plan: heuristicReasoning(perception, gameName, 'Play this unseen game', Date.now() - startTime)
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    const result = await response.json()
+    const content = result.choices?.[0]?.message?.content || ''
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0])
+        const processingTimeMs = Date.now() - startTime
+
+        const plan = {
+          timestamp: new Date().toISOString(),
+          objective: `Zero-shot: Play unseen game "${gameName}" using generalized knowledge`,
+          chainOfThought: parsed.chainOfThought || 'Zero-shot reasoning — no prior experience with this game',
+          currentAssessment: parsed.currentAssessment || 'Analyzing unseen game',
+          steps: (parsed.steps || []).map((s: any, i: number) => ({
+            id: s.id || i + 1,
+            thought: s.thought || 'Exploratory action',
+            action: s.action ? {
+              type: s.action.type || 'tap',
+              coordinates: s.action.coordinates ? {
+                x: Math.max(0, Math.min(720, s.action.coordinates.x)),
+                y: Math.max(0, Math.min(1280, s.action.coordinates.y)),
+              } : undefined,
+              swipeDirection: s.action.swipeDirection || undefined,
+              duration: s.action.duration || undefined,
+            } : null,
+            expectedOutcome: s.expectedOutcome || 'Unknown — exploratory',
+            confidence: Math.min(1, Math.max(0, s.confidence || 0.3)),
+            status: 'pending',
+          })),
+          overallConfidence: Math.min(1, Math.max(0, parsed.overallConfidence || 0.3)),
+          estimatedDurationMs: parsed.estimatedDurationMs || 8000,
+          alternativeStrategy: parsed.alternativeStrategy || 'Try tapping prominent UI elements',
+          processingTimeMs,
+        }
+
+        console.log(`🎯 ZERO-SHOT: Plan generated in ${processingTimeMs}ms — ${plan.steps.length} steps`)
+
+        return new Response(JSON.stringify({ success: true, plan }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      } catch (parseError) {
+        console.error('Zero-shot JSON parse error:', parseError)
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      plan: heuristicReasoning(perception, gameName, 'Play this unseen game', Date.now() - startTime)
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  } catch (error) {
+    console.error('🎯 ZERO-SHOT ERROR:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+}
+
 async function transferKnowledge(supabaseClient: any, targetGame: string, targetState?: string) {
   console.log(`🔄 TRANSFER: Finding transferable strategies for ${targetGame}, state: ${targetState || 'any'}`)
 
