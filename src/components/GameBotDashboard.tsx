@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, Bot, Smartphone, Play, RefreshCw, Scan, Orbit, Eye, Brain, Zap, BookOpen, BarChart3 } from "lucide-react";
+import { Plus, Search, Bot, Smartphone, Play, RefreshCw, Scan, Orbit, Eye, Brain, Zap, BookOpen, BarChart3, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
