@@ -12,6 +12,7 @@ import { LiveScreenPreview } from "./LiveScreenPreview";
 import { GameProfilesView } from "./GameProfilesView";
 import { StrategyTemplatesView } from "./StrategyTemplatesView";
 import { AgentPerformanceDashboard } from "./AgentPerformanceDashboard";
+import { ZeroShotPlayAgent } from "./ZeroShotPlayAgent";
 import { usePerception } from "@/hooks/usePerception";
 import { useReasoning } from "@/hooks/useReasoning";
 import { useExperienceBank } from "@/hooks/useExperienceBank";
