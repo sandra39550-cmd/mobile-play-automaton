@@ -181,6 +181,8 @@ serve(async (req) => {
         return await extractStrategy(supabaseClient, payload.gameName)
       case 'transfer_knowledge':
         return await transferKnowledge(supabaseClient, payload.targetGame, payload.targetState)
+      case 'zero_shot_plan':
+        return await zeroShotPlan(supabaseClient, payload.perception, payload.gameName, payload.transferredTemplates)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
