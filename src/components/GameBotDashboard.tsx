@@ -472,6 +472,29 @@ export const GameBotDashboard = () => {
             </div>
           </TabsContent>
 
+          {/* ZERO-SHOT TAB */}
+          <TabsContent value="zeroshot" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <LiveScreenPreview
+                  deviceId={perceptionDeviceId}
+                  autoRefresh={zeroShot.isRunning}
+                  refreshIntervalMs={6000}
+                />
+              </div>
+              <div className="lg:col-span-2">
+                <ZeroShotPlayAgent
+                  currentAttempt={zeroShot.currentAttempt}
+                  attemptHistory={zeroShot.attemptHistory}
+                  isRunning={zeroShot.isRunning}
+                  deviceId={perceptionDeviceId}
+                  onAttempt={zeroShot.attemptGame}
+                  onAbort={zeroShot.abort}
+                />
+              </div>
+            </div>
+          </TabsContent>
+
           {/* ANALYTICS TAB — Phase 6 */}
           <TabsContent value="analytics" className="space-y-6">
             <AgentPerformanceDashboard />
