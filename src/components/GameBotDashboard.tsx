@@ -12,6 +12,7 @@ import { LiveScreenPreview } from "./LiveScreenPreview";
 import { GameProfilesView } from "./GameProfilesView";
 import { StrategyTemplatesView } from "./StrategyTemplatesView";
 import { AgentPerformanceDashboard } from "./AgentPerformanceDashboard";
+import { ZeroShotPlayAgent } from "./ZeroShotPlayAgent";
 import { usePerception } from "@/hooks/usePerception";
 import { useReasoning } from "@/hooks/useReasoning";
 import { useExperienceBank } from "@/hooks/useExperienceBank";
@@ -19,11 +20,12 @@ import { useActionExecution } from "@/hooks/useActionExecution";
 import { useAutoPilot } from "@/hooks/useAutoPilot";
 import { useGameProfiles } from "@/hooks/useGameProfiles";
 import { useStrategyTemplates } from "@/hooks/useStrategyTemplates";
+import { useZeroShotAgent } from "@/hooks/useZeroShotAgent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, Bot, Smartphone, Play, RefreshCw, Scan, Orbit, Eye, Brain, Zap, BookOpen, BarChart3 } from "lucide-react";
+import { Plus, Search, Bot, Smartphone, Play, RefreshCw, Scan, Orbit, Eye, Brain, Zap, BookOpen, BarChart3, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { useDeviceAutomation } from "@/hooks/useDeviceAutomation";
 import { useGameManagement } from "@/hooks/useGameManagement";
@@ -39,6 +41,11 @@ export const GameBotDashboard = () => {
   const { executePlan } = useActionExecution();
   const gameProfiles = useGameProfiles();
   const strategyTemplates = useStrategyTemplates();
+  const zeroShot = useZeroShotAgent({
+    perceive,
+    executePlan,
+    markStepStatus,
+  });
   
   // Auto-Pilot
   const autoPilot = useAutoPilot({
@@ -177,7 +184,7 @@ export const GameBotDashboard = () => {
 
         {/* Main Tabs */}
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-gaming-card border-gaming-border">
+          <TabsList className="grid w-full grid-cols-5 bg-gaming-card border-gaming-border">
             <TabsTrigger value="bots" className="flex items-center gap-2">
               <Bot className="w-4 h-4" />
               Games
@@ -185,6 +192,10 @@ export const GameBotDashboard = () => {
             <TabsTrigger value="agent" className="flex items-center gap-2">
               <Brain className="w-4 h-4" />
               Agent Pipeline
+            </TabsTrigger>
+            <TabsTrigger value="zeroshot" className="flex items-center gap-2">
+              <Rocket className="w-4 h-4" />
+              Zero-Shot
             </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
@@ -457,6 +468,29 @@ export const GameBotDashboard = () => {
                     />
                   </TabsContent>
                 </Tabs>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ZERO-SHOT TAB */}
+          <TabsContent value="zeroshot" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <LiveScreenPreview
+                  deviceId={perceptionDeviceId}
+                  autoRefresh={zeroShot.isRunning}
+                  refreshIntervalMs={6000}
+                />
+              </div>
+              <div className="lg:col-span-2">
+                <ZeroShotPlayAgent
+                  currentAttempt={zeroShot.currentAttempt}
+                  attemptHistory={zeroShot.attemptHistory}
+                  isRunning={zeroShot.isRunning}
+                  deviceId={perceptionDeviceId}
+                  onAttempt={zeroShot.attemptGame}
+                  onAbort={zeroShot.abort}
+                />
               </div>
             </div>
           </TabsContent>
