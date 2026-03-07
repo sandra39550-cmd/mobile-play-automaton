@@ -41,6 +41,11 @@ export const GameBotDashboard = () => {
   const { executePlan } = useActionExecution();
   const gameProfiles = useGameProfiles();
   const strategyTemplates = useStrategyTemplates();
+  const zeroShot = useZeroShotAgent({
+    perceive,
+    executePlan,
+    markStepStatus,
+  });
   
   // Auto-Pilot
   const autoPilot = useAutoPilot({
