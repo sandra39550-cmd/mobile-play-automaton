@@ -20,6 +20,7 @@ import { useActionExecution } from "@/hooks/useActionExecution";
 import { useAutoPilot } from "@/hooks/useAutoPilot";
 import { useGameProfiles } from "@/hooks/useGameProfiles";
 import { useStrategyTemplates } from "@/hooks/useStrategyTemplates";
+import { useZeroShotAgent } from "@/hooks/useZeroShotAgent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
