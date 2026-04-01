@@ -71,7 +71,7 @@ app.get('/devices', async (req, res) => {
 
 // Execute device action
 app.post('/action', async (req, res) => {
-  const { type, coordinates, packageName, swipeDirection, duration, deviceId } = req.body;
+  const { type, coordinates, packageName, swipeDirection, duration, deviceId, fromCoordinates, toCoordinates } = req.body;
 
   console.log('========================================');
   console.log('🎯 ACTION RECEIVED:', type);
@@ -93,14 +93,33 @@ app.post('/action', async (req, res) => {
         break;
 
       case 'swipe':
-        const directions = {
-          up: '540 1500 540 500',
-          down: '540 500 540 1500',
-          left: '900 960 100 960',
-          right: '100 960 900 960'
-        };
-        const swipeCoords = directions[swipeDirection] || directions.up;
-        command = `${adbPrefix} shell input swipe ${swipeCoords} ${duration || 300}`;
+        if (fromCoordinates && toCoordinates) {
+          // Coordinate-to-coordinate swipe (for dragging tiles, moving objects)
+          command = `${adbPrefix} shell input swipe ${fromCoordinates.x} ${fromCoordinates.y} ${toCoordinates.x} ${toCoordinates.y} ${duration || 300}`;
+          console.log(`📱 Coordinate swipe: (${fromCoordinates.x},${fromCoordinates.y}) → (${toCoordinates.x},${toCoordinates.y})`);
+        } else if (swipeDirection) {
+          // Directional swipe (legacy: scroll up/down/left/right)
+          const directions = {
+            up: '540 1500 540 500',
+            down: '540 500 540 1500',
+            left: '900 960 100 960',
+            right: '100 960 900 960'
+          };
+          const swipeCoords = directions[swipeDirection] || directions.up;
+          command = `${adbPrefix} shell input swipe ${swipeCoords} ${duration || 300}`;
+        } else if (coordinates) {
+          // Swipe starting from specific coordinates (short drag)
+          const endX = coordinates.x + (req.body.deltaX || 0);
+          const endY = coordinates.y + (req.body.deltaY || 0);
+          command = `${adbPrefix} shell input swipe ${coordinates.x} ${coordinates.y} ${endX} ${endY} ${duration || 300}`;
+        } else {
+          return res.status(400).json({ success: false, error: 'Swipe requires fromCoordinates+toCoordinates, swipeDirection, or coordinates+delta' });
+        }
+        break;
+
+      case 'long_press':
+        // Long press = swipe to same point with longer duration
+        command = `${adbPrefix} shell input swipe ${coordinates.x} ${coordinates.y} ${coordinates.x} ${coordinates.y} ${duration || 800}`;
         break;
 
       case 'open_app':
