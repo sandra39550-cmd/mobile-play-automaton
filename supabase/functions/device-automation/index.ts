@@ -12,8 +12,10 @@ const ngrokBypassHeaders = {
 }
 
 interface DeviceAction {
-  type: 'tap' | 'swipe' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
+  type: 'tap' | 'swipe' | 'long_press' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
   coordinates?: { x: number; y: number }
+  fromCoordinates?: { x: number; y: number }
+  toCoordinates?: { x: number; y: number }
   swipeDirection?: 'up' | 'down' | 'left' | 'right'
   packageName?: string
   duration?: number
@@ -1127,8 +1129,9 @@ async function analyzeScreenWithGemini(screenshotBase64: string, gameName: strin
 
 GAME RULES:
 - Tile Park shows a grid of tiles with icons (fruits, vegetables, shapes)
-- Tap TWO identical tiles to match and remove them
-- Tiles can only match if there's a clear path between them (max 2 corners)
+- Tiles can be MOVED by dragging/swiping them to adjacent empty positions
+- Tap TWO identical tiles to match and remove them (if there's a clear path with max 2 corners)
+- Some tiles need to be MOVED first to create matching paths
 - Clear all tiles to win the level
 
 SCREEN LAYOUT (720x1280 pixels):
@@ -1141,18 +1144,36 @@ TILE GRID:
 - Grid is typically 7-8 columns wide
 - Tiles have distinct icons (🥕🍇🥑🍎🍊🫐🍋 etc.)
 
+AVAILABLE ACTIONS:
+1. "tap" - Tap a tile to select it for matching: { "type": "tap", "x": 360, "y": 500 }
+2. "swipe" - Drag/move a tile from one position to another: { "type": "swipe", "fromX": 130, "fromY": 430, "toX": 210, "toY": 430 }
+
 YOUR JOB:
 1. Determine screen state: "menu", "playing", "level_complete", or "paused"
 2. If "menu": tap the PLAY or START button (usually center, y: 600-900)
 3. If "level_complete": tap NEXT button
-4. If "playing": Find a matching pair and return the FIRST tile's coordinates
+4. If "playing": 
+   - Look for two identical tiles that can be matched (clear path with max 2 turns)
+   - If a match is possible, tap the FIRST tile (the AI will tap the second one next cycle)
+   - If tiles need to be MOVED to create a match path, use "swipe" to drag a tile to an empty adjacent cell
+   - Prioritize matches over moves
 
 RESPOND WITH ONLY THIS JSON FORMAT:
 {
   "gameState": "playing",
   "action": { "type": "tap", "x": 360, "y": 500 },
   "description": "Tapping carrot tile at row 2 col 4",
-  "confidence": 0.85
+  "confidence": 0.85,
+  "moveTile": null
+}
+
+OR for moving a tile:
+{
+  "gameState": "playing",
+  "action": { "type": "swipe", "fromX": 130, "fromY": 430, "toX": 210, "toY": 430 },
+  "description": "Moving apple tile right to create a matching path",
+  "confidence": 0.75,
+  "moveTile": { "from": {"x": 130, "y": 430}, "to": {"x": 210, "y": 430} }
 }`
   
   try {
@@ -1201,16 +1222,36 @@ RESPOND WITH ONLY THIS JSON FORMAT:
         const parsed = JSON.parse(jsonMatch[0])
         console.log('✅ Parsed AI action:', JSON.stringify(parsed.action))
         
-        if (parsed.action && typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
-          // Clamp coordinates to valid screen area
-          const x = Math.max(50, Math.min(670, Math.round(parsed.action.x)))
-          const y = Math.max(200, Math.min(1100, Math.round(parsed.action.y)))
-          
-          console.log(`🎯 AI target: (${x}, ${y}) - ${parsed.description || 'tile tap'}`)
-          
-          return {
-            action: { type: 'tap', coordinates: { x, y } },
-            description: parsed.description || `AI tap at (${x}, ${y})`
+        if (parsed.action) {
+          if (parsed.action.type === 'swipe' && parsed.action.fromX != null && parsed.action.toX != null) {
+            // Tile movement action (drag from A to B)
+            const fromX = Math.max(50, Math.min(670, Math.round(parsed.action.fromX)))
+            const fromY = Math.max(200, Math.min(1100, Math.round(parsed.action.fromY)))
+            const toX = Math.max(50, Math.min(670, Math.round(parsed.action.toX)))
+            const toY = Math.max(200, Math.min(1100, Math.round(parsed.action.toY)))
+            
+            console.log(`🎯 AI drag: (${fromX},${fromY}) → (${toX},${toY}) - ${parsed.description || 'tile move'}`)
+            
+            return {
+              action: { 
+                type: 'swipe', 
+                fromCoordinates: { x: fromX, y: fromY },
+                toCoordinates: { x: toX, y: toY },
+                duration: 400,
+              },
+              description: parsed.description || `AI drag from (${fromX},${fromY}) to (${toX},${toY})`
+            }
+          } else if (typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
+            // Tap action
+            const x = Math.max(50, Math.min(670, Math.round(parsed.action.x)))
+            const y = Math.max(200, Math.min(1100, Math.round(parsed.action.y)))
+            
+            console.log(`🎯 AI target: (${x}, ${y}) - ${parsed.description || 'tile tap'}`)
+            
+            return {
+              action: { type: 'tap', coordinates: { x, y } },
+              description: parsed.description || `AI tap at (${x}, ${y})`
+            }
           }
         }
       } catch (parseError) {
@@ -1405,6 +1446,8 @@ RESPOND WITH ONLY THIS JSON (no markdown, no explanation):
   "suggestedAction": {
     "type": "tap|swipe|wait|dismiss",
     "coordinates": { "x": 360, "y": 640 },
+    "fromCoordinates": { "x": 0, "y": 0 },
+    "toCoordinates": { "x": 0, "y": 0 },
     "reasoning": "Why this action makes sense given current state",
     "confidence": 0.0-1.0
   }
@@ -1414,6 +1457,8 @@ RULES:
 - Report ALL visible UI elements (buttons, tiles, text, scores, timers)
 - Be precise with bounding boxes (screen is 720x1280)
 - Set actionable=true only for elements the player can interact with
+- For tile-matching games: if tiles need to be MOVED/DRAGGED, use type "swipe" with fromCoordinates and toCoordinates
+- For tile taps/selections, use type "tap" with coordinates
 - suggestedAction should be the SINGLE best next move
 - If screen shows a popup/ad, suggest dismissing it
 - Confidence should reflect how certain you are`
@@ -1586,7 +1631,7 @@ RESPOND WITH ONLY THIS JSON (no markdown):
     {
       "id": 1,
       "thought": "Why I'm doing this action",
-      "action": { "type": "tap|swipe|wait|dismiss", "coordinates": { "x": 360, "y": 640 }, "swipeDirection": "up|down|left|right" },
+      "action": { "type": "tap|swipe|wait|dismiss|long_press", "coordinates": { "x": 360, "y": 640 }, "swipeDirection": "up|down|left|right", "fromCoordinates": { "x": 130, "y": 430 }, "toCoordinates": { "x": 210, "y": 430 }, "duration": 400 },
       "expectedOutcome": "What should happen after this action",
       "confidence": 0.85
     }
@@ -1600,6 +1645,9 @@ RULES:
 - Each step must have a clear THOUGHT explaining the reasoning
 - Coordinates must be within screen bounds (720x1280)
 - Use "wait" type for steps that require the game to animate/load
+- Use "swipe" with fromCoordinates and toCoordinates to DRAG/MOVE tiles or objects from one position to another
+- Use "tap" with coordinates to select or tap on elements
+- Use "long_press" with coordinates and duration for press-and-hold actions
 - Set null for action if the step is observational only
 - Chain of thought should show your FULL reasoning process
 - Consider the action history to avoid repeating failed actions`
@@ -1812,7 +1860,18 @@ async function executeStep(supabaseClient: any, step: any, deviceId: string, ses
       deviceId: hwDeviceId,
     }
 
-    if (step.action.coordinates) {
+    if (step.action.fromCoordinates && step.action.toCoordinates) {
+      // Coordinate-to-coordinate swipe (tile drag/move)
+      adbAction.fromCoordinates = {
+        x: Math.max(0, Math.min(720, step.action.fromCoordinates.x)),
+        y: Math.max(0, Math.min(1280, step.action.fromCoordinates.y)),
+      }
+      adbAction.toCoordinates = {
+        x: Math.max(0, Math.min(720, step.action.toCoordinates.x)),
+        y: Math.max(0, Math.min(1280, step.action.toCoordinates.y)),
+      }
+      adbAction.duration = step.action.duration || 400
+    } else if (step.action.coordinates) {
       adbAction.coordinates = {
         x: Math.max(0, Math.min(720, step.action.coordinates.x)),
         y: Math.max(0, Math.min(1280, step.action.coordinates.y)),
@@ -1820,6 +1879,9 @@ async function executeStep(supabaseClient: any, step: any, deviceId: string, ses
     }
     if (step.action.swipeDirection) {
       adbAction.swipeDirection = step.action.swipeDirection
+    }
+    if (step.action.duration) {
+      adbAction.duration = step.action.duration
     }
 
     // Execute action
