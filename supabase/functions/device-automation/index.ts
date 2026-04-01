@@ -1853,7 +1853,18 @@ async function executeStep(supabaseClient: any, step: any, deviceId: string, ses
       deviceId: hwDeviceId,
     }
 
-    if (step.action.coordinates) {
+    if (step.action.fromCoordinates && step.action.toCoordinates) {
+      // Coordinate-to-coordinate swipe (tile drag/move)
+      adbAction.fromCoordinates = {
+        x: Math.max(0, Math.min(720, step.action.fromCoordinates.x)),
+        y: Math.max(0, Math.min(1280, step.action.fromCoordinates.y)),
+      }
+      adbAction.toCoordinates = {
+        x: Math.max(0, Math.min(720, step.action.toCoordinates.x)),
+        y: Math.max(0, Math.min(1280, step.action.toCoordinates.y)),
+      }
+      adbAction.duration = step.action.duration || 400
+    } else if (step.action.coordinates) {
       adbAction.coordinates = {
         x: Math.max(0, Math.min(720, step.action.coordinates.x)),
         y: Math.max(0, Math.min(1280, step.action.coordinates.y)),
@@ -1861,6 +1872,9 @@ async function executeStep(supabaseClient: any, step: any, deviceId: string, ses
     }
     if (step.action.swipeDirection) {
       adbAction.swipeDirection = step.action.swipeDirection
+    }
+    if (step.action.duration) {
+      adbAction.duration = step.action.duration
     }
 
     // Execute action
