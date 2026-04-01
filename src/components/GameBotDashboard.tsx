@@ -41,10 +41,7 @@ export const GameBotDashboard = () => {
   const stats = getStats();
   const availableGamesForDevice = selectedDevice ? getAvailableGamesForDevice(selectedDevice) : [];
 
-  // Determine the active game's device ID for perception
-  const activeGame = useMemo(() => games.find(g => g.status === 'active'), [games]);
-  const perceptionDeviceId = activeGame?.deviceId || (onlineDevices.length > 0 ? onlineDevices[0].device_id : undefined);
-  const perceptionGameName = activeGame?.name || 'Unknown';
+  
   
   // Filter games based on search and category
   const filteredGames = games.filter(game => {
