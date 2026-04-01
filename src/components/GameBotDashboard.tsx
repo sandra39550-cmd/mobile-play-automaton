@@ -127,12 +127,6 @@ export const GameBotDashboard = () => {
             <Badge variant="outline" className="text-neon-pink border-neon-pink">
               {games.length} Games
             </Badge>
-            {autoPilot.state.isRunning && (
-              <Badge variant="outline" className="text-neon-green border-neon-green animate-pulse">
-                <Orbit className="w-3 h-3 mr-1 animate-spin" style={{ animationDuration: '3s' }} />
-                Auto-Pilot Active
-              </Badge>
-            )}
           </div>
         </div>
 
@@ -144,22 +138,10 @@ export const GameBotDashboard = () => {
 
         {/* Main Tabs */}
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-5 bg-gaming-card border-gaming-border">
+          <TabsList className="grid w-full grid-cols-2 bg-gaming-card border-gaming-border">
             <TabsTrigger value="bots" className="flex items-center gap-2">
               <Bot className="w-4 h-4" />
               Games
-            </TabsTrigger>
-            <TabsTrigger value="agent" className="flex items-center gap-2">
-              <Brain className="w-4 h-4" />
-              Agent Pipeline
-            </TabsTrigger>
-            <TabsTrigger value="zeroshot" className="flex items-center gap-2">
-              <Rocket className="w-4 h-4" />
-              Zero-Shot
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Analytics
             </TabsTrigger>
             <TabsTrigger value="devices" className="flex items-center gap-2">
               <Smartphone className="w-4 h-4" />
