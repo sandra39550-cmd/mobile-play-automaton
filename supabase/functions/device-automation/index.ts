@@ -1446,6 +1446,8 @@ RESPOND WITH ONLY THIS JSON (no markdown, no explanation):
   "suggestedAction": {
     "type": "tap|swipe|wait|dismiss",
     "coordinates": { "x": 360, "y": 640 },
+    "fromCoordinates": { "x": 0, "y": 0 },
+    "toCoordinates": { "x": 0, "y": 0 },
     "reasoning": "Why this action makes sense given current state",
     "confidence": 0.0-1.0
   }
@@ -1455,6 +1457,8 @@ RULES:
 - Report ALL visible UI elements (buttons, tiles, text, scores, timers)
 - Be precise with bounding boxes (screen is 720x1280)
 - Set actionable=true only for elements the player can interact with
+- For tile-matching games: if tiles need to be MOVED/DRAGGED, use type "swipe" with fromCoordinates and toCoordinates
+- For tile taps/selections, use type "tap" with coordinates
 - suggestedAction should be the SINGLE best next move
 - If screen shows a popup/ad, suggest dismissing it
 - Confidence should reflect how certain you are`
