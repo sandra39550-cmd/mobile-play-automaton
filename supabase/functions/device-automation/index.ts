@@ -1650,7 +1650,7 @@ RULES:
 - Use "long_press" with coordinates and duration for press-and-hold actions
 - Set null for action if the step is observational only
 - Chain of thought should show your FULL reasoning process
-- Consider the action history to avoid repeating failed actions
+- Consider the action history to avoid repeating failed actions`
 
     const perceptionSummary = JSON.stringify({
       gameState: perception.sceneUnderstanding?.gameState,
