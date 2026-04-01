@@ -15,30 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const GameBotDashboard = () => {
-  const { devices, sessions, checkAllDeviceStatus, loadDevices } = useDeviceAutomation();
-  const { games, deviceGames, isLoading, handleGameStatusChange, addGameSession, getAvailableGamesForDevice, scanGamesOnDevice, getStats } = useGameManagement();
-  const { latestPerception, isPerceiving, perceive, perceptionHistory, error: perceptionError, clearHistory } = usePerception();
-  const { currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan } = useReasoning();
-  const { experiences, stats: expStats, isEstimating, isLoading: expLoading, lastReward, estimateReward, loadExperiences } = useExperienceBank();
-  const { executePlan } = useActionExecution();
-  const gameProfiles = useGameProfiles();
-  const strategyTemplates = useStrategyTemplates();
-  const zeroShot = useZeroShotAgent({
-    perceive,
-    executePlan,
-    markStepStatus,
-  });
-  
-  // Auto-Pilot
-  const autoPilot = useAutoPilot({
-    perceive,
-    reason,
-    executePlan,
-    estimateReward,
-    markStepStatus,
-    recordAction,
-    loadExperiences,
-  });
+  const { devices, checkAllDeviceStatus, loadDevices } = useDeviceAutomation();
+  const { games, isLoading, handleGameStatusChange, addGameSession, getAvailableGamesForDevice, scanGamesOnDevice, getStats } = useGameManagement();
 
   const [currentTab, setCurrentTab] = useState("bots");
   const [searchTerm, setSearchTerm] = useState("");
