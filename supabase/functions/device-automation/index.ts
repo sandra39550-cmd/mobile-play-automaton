@@ -12,8 +12,10 @@ const ngrokBypassHeaders = {
 }
 
 interface DeviceAction {
-  type: 'tap' | 'swipe' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
+  type: 'tap' | 'swipe' | 'long_press' | 'screenshot' | 'install_app' | 'open_app' | 'close_app'
   coordinates?: { x: number; y: number }
+  fromCoordinates?: { x: number; y: number }
+  toCoordinates?: { x: number; y: number }
   swipeDirection?: 'up' | 'down' | 'left' | 'right'
   packageName?: string
   duration?: number
