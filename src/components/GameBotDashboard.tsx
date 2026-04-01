@@ -294,10 +294,7 @@ export const GameBotDashboard = () => {
             )}
           </TabsContent>
 
-          {/* AGENT PIPELINE TAB */}
-          <TabsContent value="agent" className="space-y-6">
-            {/* Auto-Pilot Control — Top */}
-            <AutoPilotControl
+
               state={autoPilot.state}
               deviceId={perceptionDeviceId}
               gameName={perceptionGameName}
