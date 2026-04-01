@@ -1627,7 +1627,7 @@ RESPOND WITH ONLY THIS JSON (no markdown):
     {
       "id": 1,
       "thought": "Why I'm doing this action",
-      "action": { "type": "tap|swipe|wait|dismiss", "coordinates": { "x": 360, "y": 640 }, "swipeDirection": "up|down|left|right" },
+      "action": { "type": "tap|swipe|wait|dismiss|long_press", "coordinates": { "x": 360, "y": 640 }, "swipeDirection": "up|down|left|right", "fromCoordinates": { "x": 130, "y": 430 }, "toCoordinates": { "x": 210, "y": 430 }, "duration": 400 },
       "expectedOutcome": "What should happen after this action",
       "confidence": 0.85
     }
