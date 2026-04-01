@@ -1222,16 +1222,36 @@ OR for moving a tile:
         const parsed = JSON.parse(jsonMatch[0])
         console.log('✅ Parsed AI action:', JSON.stringify(parsed.action))
         
-        if (parsed.action && typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
-          // Clamp coordinates to valid screen area
-          const x = Math.max(50, Math.min(670, Math.round(parsed.action.x)))
-          const y = Math.max(200, Math.min(1100, Math.round(parsed.action.y)))
-          
-          console.log(`🎯 AI target: (${x}, ${y}) - ${parsed.description || 'tile tap'}`)
-          
-          return {
-            action: { type: 'tap', coordinates: { x, y } },
-            description: parsed.description || `AI tap at (${x}, ${y})`
+        if (parsed.action) {
+          if (parsed.action.type === 'swipe' && parsed.action.fromX != null && parsed.action.toX != null) {
+            // Tile movement action (drag from A to B)
+            const fromX = Math.max(50, Math.min(670, Math.round(parsed.action.fromX)))
+            const fromY = Math.max(200, Math.min(1100, Math.round(parsed.action.fromY)))
+            const toX = Math.max(50, Math.min(670, Math.round(parsed.action.toX)))
+            const toY = Math.max(200, Math.min(1100, Math.round(parsed.action.toY)))
+            
+            console.log(`🎯 AI drag: (${fromX},${fromY}) → (${toX},${toY}) - ${parsed.description || 'tile move'}`)
+            
+            return {
+              action: { 
+                type: 'swipe', 
+                fromCoordinates: { x: fromX, y: fromY },
+                toCoordinates: { x: toX, y: toY },
+                duration: 400,
+              },
+              description: parsed.description || `AI drag from (${fromX},${fromY}) to (${toX},${toY})`
+            }
+          } else if (typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
+            // Tap action
+            const x = Math.max(50, Math.min(670, Math.round(parsed.action.x)))
+            const y = Math.max(200, Math.min(1100, Math.round(parsed.action.y)))
+            
+            console.log(`🎯 AI target: (${x}, ${y}) - ${parsed.description || 'tile tap'}`)
+            
+            return {
+              action: { type: 'tap', coordinates: { x, y } },
+              description: parsed.description || `AI tap at (${x}, ${y})`
+            }
           }
         }
       } catch (parseError) {
