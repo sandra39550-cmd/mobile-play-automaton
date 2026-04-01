@@ -25,15 +25,6 @@ export const GameBotDashboard = () => {
   const [selectedDevice, setSelectedDevice] = useState("");
   const [selectedGame, setSelectedGame] = useState("");
   const [isScanning, setIsScanning] = useState(false);
-  const [scanError, setScanError] = useState<string | null>(null);
-
-  // Auto-scan when dialog opens if we have online devices
-  useEffect(() => {
-    if (showAddGame && onlineDevices.length > 0 && !selectedDevice) {
-      const firstOnline = onlineDevices[0];
-      handleDeviceSelect(firstOnline.id);
-    }
-  }, [showAddGame]);
 
   const categories = ["all", "Strategy", "Puzzle", "Adventure", "Casino", "Battle Royale", "Endless Runner"];
   const onlineDevices = devices.filter(d => d.status === 'online');
@@ -41,8 +32,15 @@ export const GameBotDashboard = () => {
   const stats = getStats();
   const availableGamesForDevice = selectedDevice ? getAvailableGamesForDevice(selectedDevice) : [];
 
-  
-  
+  // Auto-scan when dialog opens if we have online devices
+  useEffect(() => {
+    if (showAddGame && onlineDevices.length > 0 && !selectedDevice) {
+      const firstOnline = onlineDevices[0];
+      handleDeviceSelect(firstOnline.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAddGame]);
+
   // Filter games based on search and category
   const filteredGames = games.filter(game => {
     const matchesSearch = game.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -53,7 +51,6 @@ export const GameBotDashboard = () => {
   const handleDeviceSelect = async (deviceId: string) => {
     setSelectedDevice(deviceId);
     setSelectedGame("");
-    setScanError(null);
     
     const device = availableDevices.find(d => d.id === deviceId);
     if (!device) { toast.error('Device not found'); return; }
@@ -74,7 +71,6 @@ export const GameBotDashboard = () => {
         toast.warning(`⚠️ No games found on ${device.name}`, { id: 'scan-games', duration: 10000 });
       }
     } catch (error: any) {
-      setScanError(error?.message || 'Unknown error');
       toast.error(`❌ Scan Failed: ${(error?.message || '').substring(0, 100)}`, { id: 'scan-games', duration: 8000 });
     } finally {
       setIsScanning(false);
@@ -84,7 +80,6 @@ export const GameBotDashboard = () => {
   const handleAddGame = async () => {
     if (!selectedDevice || !selectedGame) { toast.error('Please select both device and game'); return; }
     
-    const device = availableDevices.find(d => d.id === selectedDevice);
     const gameInfo = availableGamesForDevice.find(g => g.name === selectedGame);
     if (!gameInfo) { toast.error('Game not found'); return; }
     
@@ -292,164 +287,6 @@ export const GameBotDashboard = () => {
                 <p className="text-muted-foreground">Try adjusting your search or filters</p>
               </div>
             )}
-          </TabsContent>
-
-
-              state={autoPilot.state}
-              deviceId={perceptionDeviceId}
-              gameName={perceptionGameName}
-              onStart={autoPilot.start}
-              onStop={autoPilot.stop}
-              onSetSpeed={autoPilot.setSpeed}
-              onClearLogs={autoPilot.clearLogs}
-            />
-
-            {/* Two-column layout: Live Screen + Pipeline */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left: Live Screen Preview */}
-              <div className="lg:col-span-1">
-                <LiveScreenPreview
-                  deviceId={perceptionDeviceId}
-                  autoRefresh={autoPilot.state.isRunning}
-                  refreshIntervalMs={8000}
-                />
-              </div>
-
-              {/* Right: Pipeline Panels */}
-              <div className="lg:col-span-2 space-y-4">
-                {/* Phase indicators */}
-                <div className="flex items-center gap-2 px-1">
-                  {[
-                    { icon: Eye, label: 'Perceive', color: 'text-neon-purple', phase: 'perceiving' },
-                    { icon: Brain, label: 'Reason', color: 'text-neon-blue', phase: 'reasoning' },
-                    { icon: Zap, label: 'Execute', color: 'text-neon-pink', phase: 'executing' },
-                    { icon: BookOpen, label: 'Learn', color: 'text-neon-green', phase: 'rewarding' },
-                  ].map((p, i) => (
-                    <div key={p.phase} className="flex items-center gap-1 flex-1">
-                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg flex-1 justify-center text-xs font-semibold border ${
-                        autoPilot.state.currentPhase === p.phase
-                          ? `${p.color} border-current bg-current/5`
-                          : 'text-muted-foreground border-gaming-border'
-                      }`}>
-                        <p.icon className="w-3.5 h-3.5" />
-                        {p.label}
-                      </div>
-                      {i < 3 && <span className="text-muted-foreground/30 text-lg">→</span>}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Pipeline Panels in Tabs */}
-                <Tabs defaultValue="perception" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4 bg-gaming-card border-gaming-border h-9">
-                    <TabsTrigger value="perception" className="text-xs gap-1">
-                      <Eye className="w-3 h-3" /> Perceive
-                    </TabsTrigger>
-                    <TabsTrigger value="reasoning" className="text-xs gap-1">
-                      <Brain className="w-3 h-3" /> Reason
-                    </TabsTrigger>
-                    <TabsTrigger value="execution" className="text-xs gap-1">
-                      <Zap className="w-3 h-3" /> Execute
-                    </TabsTrigger>
-                    <TabsTrigger value="experience" className="text-xs gap-1">
-                      <BookOpen className="w-3 h-3" /> Learn
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="perception">
-                    <PerceptionView 
-                      deviceId={perceptionDeviceId}
-                      gameName={perceptionGameName}
-                      latestPerception={latestPerception}
-                      isPerceiving={isPerceiving}
-                      onPerceive={() => perceptionDeviceId && perceive(perceptionDeviceId, perceptionGameName)}
-                      perceptionHistory={perceptionHistory}
-                      error={perceptionError}
-                      onClearHistory={clearHistory}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="reasoning">
-                    <ReasoningView
-                      perception={latestPerception}
-                      gameName={perceptionGameName}
-                      reasoningHook={{ currentPlan, planHistory, isReasoning, error: reasoningError, reason, markStepStatus, recordAction, clearPlan }}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="execution">
-                    <ActionExecutionView
-                      plan={currentPlan}
-                      deviceId={perceptionDeviceId}
-                      onStepUpdate={markStepStatus}
-                      onRecordAction={recordAction}
-                      onExecutionComplete={async (results) => {
-                        if (currentPlan && perceptionGameName) {
-                          await estimateReward(perceptionGameName, currentPlan, results, latestPerception, null);
-                          loadExperiences(perceptionGameName);
-                        }
-                      }}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="experience">
-                    <ExperienceBankView
-                      experiences={experiences}
-                      stats={expStats}
-                      isLoading={expLoading}
-                      isEstimating={isEstimating}
-                      lastReward={lastReward}
-                      gameName={perceptionGameName}
-                      onLoadExperiences={loadExperiences}
-                    />
-                  </TabsContent>
-                </Tabs>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* ZERO-SHOT TAB */}
-          <TabsContent value="zeroshot" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1">
-                <LiveScreenPreview
-                  deviceId={perceptionDeviceId}
-                  autoRefresh={zeroShot.isRunning}
-                  refreshIntervalMs={6000}
-                />
-              </div>
-              <div className="lg:col-span-2">
-                <ZeroShotPlayAgent
-                  currentAttempt={zeroShot.currentAttempt}
-                  attemptHistory={zeroShot.attemptHistory}
-                  isRunning={zeroShot.isRunning}
-                  deviceId={perceptionDeviceId}
-                  onAttempt={zeroShot.attemptGame}
-                  onAbort={zeroShot.abort}
-                />
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* ANALYTICS TAB — Phase 6 */}
-          <TabsContent value="analytics" className="space-y-6">
-            <AgentPerformanceDashboard />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <GameProfilesView
-                profiles={gameProfiles.profiles}
-                isLoading={gameProfiles.isLoading}
-                onLoad={gameProfiles.loadProfiles}
-                onUpdateStats={gameProfiles.updateProfileStats}
-              />
-              <StrategyTemplatesView
-                templates={strategyTemplates.templates}
-                isLoading={strategyTemplates.isLoading}
-                isExtracting={strategyTemplates.isExtracting}
-                gameName={perceptionGameName}
-                onLoad={strategyTemplates.loadTemplates}
-                onExtract={strategyTemplates.extractTemplate}
-              />
-            </div>
           </TabsContent>
 
           {/* DEVICES TAB */}
