@@ -1129,8 +1129,9 @@ async function analyzeScreenWithGemini(screenshotBase64: string, gameName: strin
 
 GAME RULES:
 - Tile Park shows a grid of tiles with icons (fruits, vegetables, shapes)
-- Tap TWO identical tiles to match and remove them
-- Tiles can only match if there's a clear path between them (max 2 corners)
+- Tiles can be MOVED by dragging/swiping them to adjacent empty positions
+- Tap TWO identical tiles to match and remove them (if there's a clear path with max 2 corners)
+- Some tiles need to be MOVED first to create matching paths
 - Clear all tiles to win the level
 
 SCREEN LAYOUT (720x1280 pixels):
@@ -1143,18 +1144,36 @@ TILE GRID:
 - Grid is typically 7-8 columns wide
 - Tiles have distinct icons (🥕🍇🥑🍎🍊🫐🍋 etc.)
 
+AVAILABLE ACTIONS:
+1. "tap" - Tap a tile to select it for matching: { "type": "tap", "x": 360, "y": 500 }
+2. "swipe" - Drag/move a tile from one position to another: { "type": "swipe", "fromX": 130, "fromY": 430, "toX": 210, "toY": 430 }
+
 YOUR JOB:
 1. Determine screen state: "menu", "playing", "level_complete", or "paused"
 2. If "menu": tap the PLAY or START button (usually center, y: 600-900)
 3. If "level_complete": tap NEXT button
-4. If "playing": Find a matching pair and return the FIRST tile's coordinates
+4. If "playing": 
+   - Look for two identical tiles that can be matched (clear path with max 2 turns)
+   - If a match is possible, tap the FIRST tile (the AI will tap the second one next cycle)
+   - If tiles need to be MOVED to create a match path, use "swipe" to drag a tile to an empty adjacent cell
+   - Prioritize matches over moves
 
 RESPOND WITH ONLY THIS JSON FORMAT:
 {
   "gameState": "playing",
   "action": { "type": "tap", "x": 360, "y": 500 },
   "description": "Tapping carrot tile at row 2 col 4",
-  "confidence": 0.85
+  "confidence": 0.85,
+  "moveTile": null
+}
+
+OR for moving a tile:
+{
+  "gameState": "playing",
+  "action": { "type": "swipe", "fromX": 130, "fromY": 430, "toX": 210, "toY": 430 },
+  "description": "Moving apple tile right to create a matching path",
+  "confidence": 0.75,
+  "moveTile": { "from": {"x": 130, "y": 430}, "to": {"x": 210, "y": 430} }
 }`
   
   try {
