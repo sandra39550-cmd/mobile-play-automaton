@@ -1641,9 +1641,12 @@ RULES:
 - Each step must have a clear THOUGHT explaining the reasoning
 - Coordinates must be within screen bounds (720x1280)
 - Use "wait" type for steps that require the game to animate/load
+- Use "swipe" with fromCoordinates and toCoordinates to DRAG/MOVE tiles or objects from one position to another
+- Use "tap" with coordinates to select or tap on elements
+- Use "long_press" with coordinates and duration for press-and-hold actions
 - Set null for action if the step is observational only
 - Chain of thought should show your FULL reasoning process
-- Consider the action history to avoid repeating failed actions`
+- Consider the action history to avoid repeating failed actions
 
     const perceptionSummary = JSON.stringify({
       gameState: perception.sceneUnderstanding?.gameState,
