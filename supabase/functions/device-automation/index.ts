@@ -939,7 +939,6 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       throw new Error('Device is offline')
     }
     
-    // Use provided hardware ID or fall back to device.device_id
     const deviceId = hardwareDeviceId || device.device_id
     console.log(`📱 Using device ID for ADB: ${deviceId}`)
     
@@ -962,55 +961,81 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       
       console.log(`🖼️ Screenshot ready (${screenshot.length} chars), calling Gemini AI...`)
       
-      // 2. Analyze screenshot with AI to find tile matches
-      let analysis
-      if (session.game_name.toLowerCase().includes('tile') || 
-          session.package_name.toLowerCase().includes('tilepark')) {
-        // Use AI vision for Tile Park
-        analysis = await analyzeScreenWithGemini(screenshot, session.game_name)
-        console.log(`🎯 AI result: ${analysis.description}`)
-      } else {
-        // Fallback to heuristic analysis
-        analysis = analyzeScreenHeuristic(session.game_name)
-      }
+      // 2. Analyze screenshot with AI
+      const isTilePark = session.game_name.toLowerCase().includes('tile') || 
+          session.package_name.toLowerCase().includes('tilepark')
       
-      // 3. Execute the recommended action
+      const analysis = isTilePark 
+        ? await analyzeScreenWithGemini(screenshot, session.game_name)
+        : analyzeScreenHeuristic(session.game_name)
+      
+      console.log(`🎯 AI result: ${analysis.description}`)
+      
+      // 3. Execute actions
       if (analysis.action) {
-        const coords = analysis.action.coordinates
-        console.log(`👆 Tapping at (${coords?.x}, ${coords?.y})...`)
-        
-        // Add deviceId to the action
-        const actionWithDevice = {
-          ...analysis.action,
-          deviceId: deviceId
-        }
-        
-        const actionResult = await executeRealAction(baseUrl, actionWithDevice)
-        actionsPerformed++
-        console.log(`✅ Tap result: success=${actionResult.success}, time=${actionResult.executionTime}ms`)
-        
-        // Log the action
-        await supabaseClient
-          .from('bot_actions')
-          .insert({
-            session_id: sessionId,
-            action_type: analysis.action.type,
-            coordinates: analysis.action.coordinates,
+        // For tile matching: tap first tile, wait, tap second tile
+        if (analysis.matchPair) {
+          const tile1 = analysis.matchPair.tile1
+          const tile2 = analysis.matchPair.tile2
+          
+          console.log(`🧩 Matching pair: (${tile1.x},${tile1.y}) → (${tile2.x},${tile2.y})`)
+          
+          // Tap first tile
+          const tap1Result = await executeRealAction(baseUrl, { type: 'tap', coordinates: tile1, deviceId })
+          actionsPerformed++
+          console.log(`👆 Tap 1 result: success=${tap1Result.success}`)
+          
+          await supabaseClient.from('bot_actions').insert({
+            session_id: sessionId, action_type: 'tap',
+            coordinates: tile1, success: tap1Result.success,
+            execution_time_ms: tap1Result.executionTime || 100
+          })
+          
+          // Wait for selection highlight animation
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          // Tap second tile to complete match
+          const tap2Result = await executeRealAction(baseUrl, { type: 'tap', coordinates: tile2, deviceId })
+          actionsPerformed++
+          console.log(`👆 Tap 2 result: success=${tap2Result.success}`)
+          
+          await supabaseClient.from('bot_actions').insert({
+            session_id: sessionId, action_type: 'tap',
+            coordinates: tile2, success: tap2Result.success,
+            execution_time_ms: tap2Result.executionTime || 100
+          })
+          
+          results.push({
+            iteration: i + 1,
+            action: 'match_pair',
+            tile1, tile2,
+            description: analysis.description
+          })
+        } else {
+          // Single action (menu tap, swipe, etc.)
+          const actionWithDevice = { ...analysis.action, deviceId }
+          const actionResult = await executeRealAction(baseUrl, actionWithDevice)
+          actionsPerformed++
+          
+          await supabaseClient.from('bot_actions').insert({
+            session_id: sessionId, action_type: analysis.action.type,
+            coordinates: analysis.action.coordinates || analysis.action.fromCoordinates,
             success: actionResult.success,
             execution_time_ms: actionResult.executionTime || 100
           })
-        
-        results.push({
-          iteration: i + 1,
-          action: analysis.action,
-          result: actionResult,
-          description: analysis.description
-        })
+          
+          results.push({
+            iteration: i + 1,
+            action: analysis.action,
+            result: actionResult,
+            description: analysis.description
+          })
+        }
       }
       
-      // Small delay between iterations
+      // Delay between iterations to let animations play
       if (i < iterations - 1) {
-        await new Promise(resolve => setTimeout(resolve, 300))
+        await new Promise(resolve => setTimeout(resolve, 800))
       }
     }
     
