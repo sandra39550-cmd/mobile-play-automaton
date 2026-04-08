@@ -1133,6 +1133,7 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
 async function analyzeScreenWithGemini(screenshotBase64: string, gameName: string): Promise<{
   action: DeviceAction | null
   description: string
+  matchPair?: { tile1: { x: number; y: number }; tile2: { x: number; y: number } }
   tiles?: any[]
 }> {
   console.log(`🧠 Analyzing ${gameName} with Gemini AI Vision...`)
