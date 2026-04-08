@@ -1074,54 +1074,94 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
   try {
     console.log(`📸 Taking screenshot from device: ${deviceId}`)
 
-    // Prefer POST (JSON body), but allow GET fallback for tunnels/proxies that block POST.
-    const postResponse = await fetch(`${baseUrl}/screenshot`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...ngrokBypassHeaders,
-      },
-      body: JSON.stringify({ deviceId }),
-      signal: AbortSignal.timeout(15000),
-    })
+    const commonHeaders = {
+      ...ngrokBypassHeaders,
+      'User-Agent': 'Lovable-Bot/1.0',
+      'Accept': 'application/json',
+    }
 
-    if (postResponse.ok) {
-      const result = await postResponse.json()
-      const screenshot = result.screenshot || ''
+    // Helper to extract base64 from a response (handles JSON or raw PNG)
+    async function extractScreenshot(resp: Response): Promise<string> {
+      const contentType = resp.headers.get('content-type') || ''
+      
+      if (contentType.includes('application/json')) {
+        const result = await resp.json()
+        return result.screenshot || ''
+      }
+      
+      if (contentType.includes('image/png') || contentType.includes('application/octet-stream')) {
+        // Raw PNG binary — convert to base64 data URI
+        console.log('📸 Received raw PNG, converting to base64...')
+        const arrayBuffer = await resp.arrayBuffer()
+        const bytes = new Uint8Array(arrayBuffer)
+        let binary = ''
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i])
+        }
+        const b64 = btoa(binary)
+        return `data:image/png;base64,${b64}`
+      }
+      
+      // Try JSON parse anyway
+      try {
+        const text = await resp.text()
+        const parsed = JSON.parse(text)
+        return parsed.screenshot || ''
+      } catch {
+        console.warn('📸 Could not parse response as JSON, content-type:', contentType)
+        return ''
+      }
+    }
+
+    // Try POST first
+    try {
+      const postResponse = await fetch(`${baseUrl}/screenshot`, {
+        method: 'POST',
+        headers: { ...commonHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId }),
+        signal: AbortSignal.timeout(15000),
+      })
+
+      if (postResponse.ok) {
+        const screenshot = await extractScreenshot(postResponse)
+        if (screenshot && screenshot.length > 500) {
+          console.log(`📸 Screenshot OK (POST): ${screenshot.length} chars`)
+          return screenshot
+        }
+        console.warn(`⚠️ POST screenshot too short: ${screenshot?.length || 0} chars`)
+      } else {
+        console.error('Screenshot POST failed:', postResponse.status)
+      }
+    } catch (postErr) {
+      console.error('Screenshot POST error:', postErr)
+    }
+
+    // GET fallback
+    try {
+      const url = new URL(`${baseUrl}/screenshot`)
+      url.searchParams.set('deviceId', deviceId)
+
+      const getResponse = await fetch(url.toString(), {
+        method: 'GET',
+        headers: commonHeaders,
+        signal: AbortSignal.timeout(15000),
+      })
+
+      if (!getResponse.ok) {
+        console.error('Screenshot GET failed:', getResponse.status)
+        return ''
+      }
+
+      const screenshot = await extractScreenshot(getResponse)
       if (screenshot && screenshot.length > 500) {
-        console.log(`📸 Screenshot OK (POST): ${screenshot.length} chars`)
+        console.log(`📸 Screenshot OK (GET): ${screenshot.length} chars`)
         return screenshot
       }
-      console.warn(`⚠️ POST screenshot too short: ${screenshot.length} chars`)
+      console.warn(`⚠️ GET screenshot too short: ${screenshot?.length || 0} chars`)
+    } catch (getErr) {
+      console.error('Screenshot GET error:', getErr)
     }
 
-    if (!postResponse.ok) {
-      console.error('Screenshot POST failed:', postResponse.status)
-    }
-
-    const url = new URL(`${baseUrl}/screenshot`)
-    url.searchParams.set('deviceId', deviceId)
-
-    const getResponse = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        ...ngrokBypassHeaders,
-      },
-      signal: AbortSignal.timeout(15000),
-    })
-
-    if (!getResponse.ok) {
-      console.error('Screenshot GET failed:', getResponse.status)
-      return ''
-    }
-
-    const result = await getResponse.json()
-    const screenshot = result.screenshot || ''
-    if (screenshot && screenshot.length > 500) {
-      console.log(`📸 Screenshot OK (GET): ${screenshot.length} chars`)
-      return screenshot
-    }
-    console.warn(`⚠️ GET screenshot too short: ${screenshot.length} chars`)
     return ''
   } catch (error) {
     console.error('Screenshot error:', error)
