@@ -71,8 +71,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
             action: 'run_bot_loop',
             payload: {
               sessionId: sessionId,
-              deviceId: deviceId,  // Pass hardware device ID
-              iterations: 3
+              deviceId: deviceId,
+              iterations: 1
             }
           }
         });
@@ -87,7 +87,9 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
           console.log(`✅ Agent loop completed: ${loopData.actionsPerformed} actions`);
         } else if (loopData?.error) {
           console.error('Agent loop failed:', loopData.error);
-          toast.error(`Agent error: ${loopData.error}`);
+          if (!loopData.error.includes('rate')) {
+            toast.error(`Agent error: ${loopData.error}`);
+          }
         }
       } catch (err) {
         console.error('Agent loop exception:', err);
@@ -97,8 +99,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
     // Run immediately
     await runLoop();
     
-    // Then run every 2 seconds
-    playIntervalRef.current = setInterval(runLoop, 2000);
+    // Then run every 6 seconds (allows Gemini time to respond + avoids rate limits)
+    playIntervalRef.current = setInterval(runLoop, 6000);
   };
 
   const stopBot = () => {
