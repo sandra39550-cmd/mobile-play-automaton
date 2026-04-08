@@ -1150,55 +1150,60 @@ async function analyzeScreenWithGemini(screenshotBase64: string, gameName: strin
     return analyzeScreenHeuristic(gameName)
   }
   
-  const systemPrompt = `You are an expert game automation bot for the Tile Park tile-matching puzzle game.
+  const systemPrompt = `You are an expert AI agent playing the Tile Park tile-matching puzzle game. Your goal is to clear all tiles by finding and tapping matching pairs.
 
 GAME RULES:
-- Tile Park shows a grid of tiles with icons (fruits, vegetables, shapes)
-- Tiles can be MOVED by dragging/swiping them to adjacent empty positions
-- Tap TWO identical tiles to match and remove them (if there's a clear path with max 2 corners)
-- Some tiles need to be MOVED first to create matching paths
-- Clear all tiles to win the level
+- The board has a grid of tiles with icons (fruits, vegetables, shapes, etc.)
+- To match tiles: tap two IDENTICAL tiles that can be connected by a path with AT MOST 2 turns/corners
+- The connecting path cannot pass through other tiles
+- When matched, both tiles disappear
+- Clear all tiles to win
 
 SCREEN LAYOUT (720x1280 pixels):
-- Top area (y: 0-300): Score, timer, level info
-- Game board (y: 350-950, x: 50-670): Tile grid
-- Bottom area (y: 950+): Hints, settings buttons
+- Top area (y: 0-300): Score, timer, level info, menu buttons
+- Game board (y: 300-1000, x: 30-690): The tile grid
+- Bottom area (y: 1000+): Hints, shuffle, settings
 
-TILE GRID:
-- Tiles are ~80x80 pixels each
-- Grid is typically 7-8 columns wide
-- Tiles have distinct icons (🥕🍇🥑🍎🍊🫐🍋 etc.)
+CRITICAL INSTRUCTIONS:
+1. First determine the screen state: "menu", "playing", "level_complete", "popup", or "game_over"
+2. If "menu": find and tap the PLAY/START button
+3. If "level_complete": tap the NEXT/CONTINUE button
+4. If "popup": tap X/CLOSE or the dismiss button
+5. If "playing": Find TWO identical tiles that can be matched and return BOTH coordinates
 
-AVAILABLE ACTIONS:
-1. "tap" - Tap a tile to select it for matching: { "type": "tap", "x": 360, "y": 500 }
-2. "swipe" - Drag/move a tile from one position to another: { "type": "swipe", "fromX": 130, "fromY": 430, "toX": 210, "toY": 430 }
+FOR MATCHING (when state is "playing"):
+- Scan the entire board for identical tile pairs
+- Check if a clear path exists between them (max 2 corners, no tiles blocking)
+- Return BOTH tile coordinates so they can be tapped in sequence
+- Be precise with coordinates - each tile is approximately 70-80px wide
 
-YOUR JOB:
-1. Determine screen state: "menu", "playing", "level_complete", or "paused"
-2. If "menu": tap the PLAY or START button (usually center, y: 600-900)
-3. If "level_complete": tap NEXT button
-4. If "playing": 
-   - Look for two identical tiles that can be matched (clear path with max 2 turns)
-   - If a match is possible, tap the FIRST tile (the AI will tap the second one next cycle)
-   - If tiles need to be MOVED to create a match path, use "swipe" to drag a tile to an empty adjacent cell
-   - Prioritize matches over moves
-
-RESPOND WITH ONLY THIS JSON FORMAT:
+RESPOND WITH ONLY THIS JSON:
+For a match:
 {
   "gameState": "playing",
-  "action": { "type": "tap", "x": 360, "y": 500 },
-  "description": "Tapping carrot tile at row 2 col 4",
-  "confidence": 0.85,
-  "moveTile": null
+  "matchPair": {
+    "tile1": { "x": 130, "y": 430 },
+    "tile2": { "x": 450, "y": 590 },
+    "tileName": "carrot"
+  },
+  "description": "Matching two carrot tiles at row 2 col 1 and row 4 col 5",
+  "confidence": 0.9
 }
 
-OR for moving a tile:
+For menu/popup/other (single tap):
+{
+  "gameState": "menu",
+  "action": { "type": "tap", "x": 360, "y": 700 },
+  "description": "Tapping PLAY button",
+  "confidence": 0.95
+}
+
+For moving a tile to create a match path:
 {
   "gameState": "playing",
   "action": { "type": "swipe", "fromX": 130, "fromY": 430, "toX": 210, "toY": 430 },
-  "description": "Moving apple tile right to create a matching path",
-  "confidence": 0.75,
-  "moveTile": { "from": {"x": 130, "y": 430}, "to": {"x": 210, "y": 430} }
+  "description": "Moving tile right to clear path for match",
+  "confidence": 0.7
 }`
   
   try {
@@ -1215,7 +1220,7 @@ OR for moving a tile:
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Analyze this Tile Park screenshot. Return the exact x,y coordinates to tap.' },
+              { type: 'text', text: 'Analyze this Tile Park game screenshot. Find two matching tiles that can be connected and return their exact pixel coordinates. If not playing, identify the button to tap.' },
               {
                 type: 'image_url',
                 image_url: { url: screenshotBase64 }
@@ -1223,10 +1228,10 @@ OR for moving a tile:
             ]
           }
         ],
-        max_tokens: 600,
-        temperature: 0.2
+        max_tokens: 800,
+        temperature: 0.1
       }),
-      signal: AbortSignal.timeout(25000)
+      signal: AbortSignal.timeout(30000)
     })
     
     if (!response.ok) {
@@ -1238,44 +1243,65 @@ OR for moving a tile:
     const result = await response.json()
     const content = result.choices?.[0]?.message?.content || ''
     
-    console.log('🧠 Gemini response:', content.substring(0, 500))
+    console.log('🧠 Gemini response:', content.substring(0, 600))
     
     // Extract JSON from response
     const jsonMatch = content.match(/\{[\s\S]*\}/)
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[0])
-        console.log('✅ Parsed AI action:', JSON.stringify(parsed.action))
+        console.log('✅ Parsed AI response:', JSON.stringify(parsed))
         
+        // Handle matching pair response
+        if (parsed.matchPair && parsed.matchPair.tile1 && parsed.matchPair.tile2) {
+          const t1 = parsed.matchPair.tile1
+          const t2 = parsed.matchPair.tile2
+          
+          const tile1 = {
+            x: Math.max(30, Math.min(690, Math.round(t1.x))),
+            y: Math.max(200, Math.min(1100, Math.round(t1.y)))
+          }
+          const tile2 = {
+            x: Math.max(30, Math.min(690, Math.round(t2.x))),
+            y: Math.max(200, Math.min(1100, Math.round(t2.y)))
+          }
+          
+          console.log(`🧩 Match found: ${parsed.matchPair.tileName || 'tile'} at (${tile1.x},${tile1.y}) and (${tile2.x},${tile2.y})`)
+          
+          return {
+            action: { type: 'tap' as const, coordinates: tile1 },
+            matchPair: { tile1, tile2 },
+            description: parsed.description || `Matching ${parsed.matchPair.tileName || 'tiles'}`
+          }
+        }
+        
+        // Handle swipe/move action
         if (parsed.action) {
           if (parsed.action.type === 'swipe' && parsed.action.fromX != null && parsed.action.toX != null) {
-            // Tile movement action (drag from A to B)
-            const fromX = Math.max(50, Math.min(670, Math.round(parsed.action.fromX)))
+            const fromX = Math.max(30, Math.min(690, Math.round(parsed.action.fromX)))
             const fromY = Math.max(200, Math.min(1100, Math.round(parsed.action.fromY)))
-            const toX = Math.max(50, Math.min(670, Math.round(parsed.action.toX)))
+            const toX = Math.max(30, Math.min(690, Math.round(parsed.action.toX)))
             const toY = Math.max(200, Math.min(1100, Math.round(parsed.action.toY)))
-            
-            console.log(`🎯 AI drag: (${fromX},${fromY}) → (${toX},${toY}) - ${parsed.description || 'tile move'}`)
             
             return {
               action: { 
-                type: 'swipe', 
+                type: 'swipe' as const, 
                 fromCoordinates: { x: fromX, y: fromY },
                 toCoordinates: { x: toX, y: toY },
                 duration: 400,
               },
-              description: parsed.description || `AI drag from (${fromX},${fromY}) to (${toX},${toY})`
+              description: parsed.description || `Moving tile from (${fromX},${fromY}) to (${toX},${toY})`
             }
-          } else if (typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
-            // Tap action
-            const x = Math.max(50, Math.min(670, Math.round(parsed.action.x)))
+          }
+          
+          // Handle tap action (menu, popup, etc.)
+          if (typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
+            const x = Math.max(30, Math.min(690, Math.round(parsed.action.x)))
             const y = Math.max(200, Math.min(1100, Math.round(parsed.action.y)))
             
-            console.log(`🎯 AI target: (${x}, ${y}) - ${parsed.description || 'tile tap'}`)
-            
             return {
-              action: { type: 'tap', coordinates: { x, y } },
-              description: parsed.description || `AI tap at (${x}, ${y})`
+              action: { type: 'tap' as const, coordinates: { x, y } },
+              description: parsed.description || `Tap at (${x}, ${y})`
             }
           }
         }
