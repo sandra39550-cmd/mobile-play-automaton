@@ -1074,46 +1074,56 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
   try {
     console.log(`📸 Taking screenshot from device: ${deviceId}`)
 
+    if (!deviceId) {
+      console.error('📸 No deviceId provided for screenshot!')
+      return ''
+    }
+
     const commonHeaders = {
       ...ngrokBypassHeaders,
       'User-Agent': 'Lovable-Bot/1.0',
-      'Accept': 'application/json',
+      'Accept': 'application/json, image/png',
     }
 
     // Helper to extract base64 from a response (handles JSON or raw PNG)
     async function extractScreenshot(resp: Response): Promise<string> {
       const contentType = resp.headers.get('content-type') || ''
       
-      if (contentType.includes('application/json')) {
-        const result = await resp.json()
-        return result.screenshot || ''
-      }
-      
       if (contentType.includes('image/png') || contentType.includes('application/octet-stream')) {
-        // Raw PNG binary — convert to base64 data URI
         console.log('📸 Received raw PNG, converting to base64...')
         const arrayBuffer = await resp.arrayBuffer()
         const bytes = new Uint8Array(arrayBuffer)
+        const CHUNK_SIZE = 8192
         let binary = ''
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i])
+        for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+          const chunk = bytes.subarray(i, i + CHUNK_SIZE)
+          binary += String.fromCharCode.apply(null, Array.from(chunk))
         }
         const b64 = btoa(binary)
         return `data:image/png;base64,${b64}`
       }
       
-      // Try JSON parse anyway
+      // Try JSON
       try {
         const text = await resp.text()
+        // Check for ngrok interstitial HTML
+        if (text.includes('ngrok') && text.includes('<html')) {
+          console.warn('📸 Got ngrok interstitial page, not a screenshot')
+          return ''
+        }
         const parsed = JSON.parse(text)
+        if (parsed.error) {
+          console.error('📸 ADB server error:', parsed.error)
+          return ''
+        }
         return parsed.screenshot || ''
       } catch {
-        console.warn('📸 Could not parse response as JSON, content-type:', contentType)
+        console.warn('📸 Could not parse response, content-type:', contentType)
         return ''
       }
     }
 
-    // Try POST first
+    // Try POST first (with deviceId in body)
     try {
       const postResponse = await fetch(`${baseUrl}/screenshot`, {
         method: 'POST',
@@ -1128,27 +1138,29 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
           console.log(`📸 Screenshot OK (POST): ${screenshot.length} chars`)
           return screenshot
         }
-        console.warn(`⚠️ POST screenshot too short: ${screenshot?.length || 0} chars`)
       } else {
-        console.error('Screenshot POST failed:', postResponse.status)
+        // Consume body to prevent leak
+        await postResponse.text().catch(() => {})
+        console.warn('📸 POST failed:', postResponse.status, '- trying GET')
       }
     } catch (postErr) {
-      console.error('Screenshot POST error:', postErr)
+      console.warn('📸 POST error, trying GET fallback')
     }
 
-    // GET fallback
+    // GET fallback — always include deviceId
     try {
-      const url = new URL(`${baseUrl}/screenshot`)
-      url.searchParams.set('deviceId', deviceId)
+      const getUrl = `${baseUrl}/screenshot?deviceId=${encodeURIComponent(deviceId)}`
+      console.log(`📸 GET fallback: ${getUrl}`)
 
-      const getResponse = await fetch(url.toString(), {
+      const getResponse = await fetch(getUrl, {
         method: 'GET',
         headers: commonHeaders,
         signal: AbortSignal.timeout(15000),
       })
 
       if (!getResponse.ok) {
-        console.error('Screenshot GET failed:', getResponse.status)
+        await getResponse.text().catch(() => {})
+        console.error('📸 GET failed:', getResponse.status)
         return ''
       }
 
@@ -1157,14 +1169,14 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
         console.log(`📸 Screenshot OK (GET): ${screenshot.length} chars`)
         return screenshot
       }
-      console.warn(`⚠️ GET screenshot too short: ${screenshot?.length || 0} chars`)
+      console.warn(`📸 GET screenshot too short: ${screenshot?.length || 0} chars`)
     } catch (getErr) {
-      console.error('Screenshot GET error:', getErr)
+      console.error('📸 GET error:', getErr)
     }
 
     return ''
   } catch (error) {
-    console.error('Screenshot error:', error)
+    console.error('📸 Screenshot error:', error)
     return ''
   }
 }
