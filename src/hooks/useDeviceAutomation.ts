@@ -130,8 +130,9 @@ export const useDeviceAutomation = () => {
       if (error) throw error
 
       if (data.success) {
-        const statusMessage = data.connected 
-          ? `Device "${deviceInfo.name}" is online` 
+        const isOnline = data.device?.status === 'online' || data.connected === true
+        const statusMessage = isOnline
+          ? `Device "${deviceInfo.name}" is online`
           : `Device "${deviceInfo.name}" connected but appears offline`
         toast.success(statusMessage)
         // Force immediate refresh to get updated status
