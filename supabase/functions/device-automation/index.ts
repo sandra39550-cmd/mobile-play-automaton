@@ -204,7 +204,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   console.log('Connecting device:', deviceInfo)
   
   let realDeviceId = deviceInfo.deviceId
-  let deviceStatus = false
+  let deviceStatus: boolean | null = null
   const adbServerUrl = await getAdbServerUrl(supabaseClient)
   
   if (adbServerUrl) {
@@ -227,9 +227,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
         const matchedDevice = connectedDevices.find((d: any) =>
           d.id === deviceInfo.deviceId ||
           d.serial === deviceInfo.deviceId ||
-          d.device_id === deviceInfo.deviceId ||
-          d.status === 'online' ||
-          d.adbStatus === 'device'
+          d.device_id === deviceInfo.deviceId
         )
         
         if (matchedDevice) {
@@ -248,15 +246,19 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
     }
   }
   
-  if (!deviceStatus) {
+  if (deviceStatus === null) {
     deviceStatus = await checkADBConnection(realDeviceId, supabaseClient)
   }
   
   const { data: existingDevice } = await supabaseClient
     .from('devices')
-    .select('id')
+    .select('id, status')
     .eq('name', deviceInfo.name)
     .maybeSingle()
+
+  const resolvedStatus = deviceStatus === null
+    ? 'online'
+    : (deviceStatus ? 'online' : 'offline')
 
   let data, error
   
@@ -265,7 +267,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
       .from('devices')
       .update({
         device_id: realDeviceId,
-        status: deviceStatus ? 'online' : 'offline',
+        status: resolvedStatus,
         adb_host: deviceInfo.adbHost,
         adb_port: deviceInfo.adbPort,
         screen_width: deviceInfo.screenWidth,
@@ -287,7 +289,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
         name: deviceInfo.name,
         device_id: realDeviceId,
         platform: deviceInfo.platform,
-        status: deviceStatus ? 'online' : 'offline',
+        status: resolvedStatus,
         adb_host: deviceInfo.adbHost,
         adb_port: deviceInfo.adbPort,
         screen_width: deviceInfo.screenWidth,
@@ -308,7 +310,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   return new Response(JSON.stringify({ 
     success: true, 
     device: data,
-    connected: deviceStatus
+    connected: resolvedStatus === 'online'
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
@@ -455,8 +457,8 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
     }
 
     const isConnected = await checkADBConnection(device.device_id, supabaseClient)
+    const newStatus = isConnected === null ? device.status : (isConnected ? 'online' : 'offline')
     
-    const newStatus = isConnected ? 'online' : 'offline'
     await supabaseClient
       .from('devices')
       .update({ 
@@ -471,7 +473,8 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
     return new Response(JSON.stringify({ 
       success: true, 
       status: newStatus,
-      deviceId: device.device_id
+      deviceId: device.device_id,
+      reachable: isConnected !== null
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
@@ -487,7 +490,7 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
   }
 }
 
-async function checkADBConnection(deviceId: string, supabaseClient?: any): Promise<boolean> {
+async function checkADBConnection(deviceId: string, supabaseClient?: any): Promise<boolean | null> {
   try {
     let adbServerUrl: string | null = null
     
@@ -496,7 +499,7 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
         adbServerUrl = await getAdbServerUrl(supabaseClient)
       } catch (error) {
         console.error('⚠️ Could not get ADB server URL:', error.message)
-        return false
+        return null
       }
     } else {
       adbServerUrl = Deno.env.get('ADB_SERVER_URL') || null
@@ -504,7 +507,7 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     
     if (!adbServerUrl) {
       console.error('⚠️ ADB_SERVER_URL not configured')
-      return false
+      return null
     }
 
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
@@ -526,6 +529,9 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '')
       console.error('❌ ADB server request failed:', response.status, bodyText.slice(0, 200))
+      if (bodyText.includes('ERR_NGROK_725') || bodyText.toLowerCase().includes('bandwidth limit')) {
+        return null
+      }
       return false
     }
     
