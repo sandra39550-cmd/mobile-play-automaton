@@ -257,7 +257,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
     .maybeSingle()
 
   const resolvedStatus = deviceStatus === null
-    ? (existingDevice?.status ?? 'online')
+    ? 'online'
     : (deviceStatus ? 'online' : 'offline')
 
   let data, error
