@@ -204,7 +204,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   console.log('Connecting device:', deviceInfo)
   
   let realDeviceId = deviceInfo.deviceId
-  let deviceStatus = false
+  let deviceStatus: boolean | null = null
   const adbServerUrl = await getAdbServerUrl(supabaseClient)
   
   if (adbServerUrl) {
@@ -227,9 +227,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
         const matchedDevice = connectedDevices.find((d: any) =>
           d.id === deviceInfo.deviceId ||
           d.serial === deviceInfo.deviceId ||
-          d.device_id === deviceInfo.deviceId ||
-          d.status === 'online' ||
-          d.adbStatus === 'device'
+          d.device_id === deviceInfo.deviceId
         )
         
         if (matchedDevice) {
@@ -248,15 +246,19 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
     }
   }
   
-  if (!deviceStatus) {
+  if (deviceStatus === null) {
     deviceStatus = await checkADBConnection(realDeviceId, supabaseClient)
   }
   
   const { data: existingDevice } = await supabaseClient
     .from('devices')
-    .select('id')
+    .select('id, status')
     .eq('name', deviceInfo.name)
     .maybeSingle()
+
+  const resolvedStatus = deviceStatus === null
+    ? (existingDevice?.status ?? 'online')
+    : (deviceStatus ? 'online' : 'offline')
 
   let data, error
   
@@ -265,7 +267,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
       .from('devices')
       .update({
         device_id: realDeviceId,
-        status: deviceStatus ? 'online' : 'offline',
+        status: resolvedStatus,
         adb_host: deviceInfo.adbHost,
         adb_port: deviceInfo.adbPort,
         screen_width: deviceInfo.screenWidth,
@@ -287,7 +289,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
         name: deviceInfo.name,
         device_id: realDeviceId,
         platform: deviceInfo.platform,
-        status: deviceStatus ? 'online' : 'offline',
+        status: resolvedStatus,
         adb_host: deviceInfo.adbHost,
         adb_port: deviceInfo.adbPort,
         screen_width: deviceInfo.screenWidth,
@@ -308,7 +310,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   return new Response(JSON.stringify({ 
     success: true, 
     device: data,
-    connected: deviceStatus
+    connected: resolvedStatus === 'online'
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   })
