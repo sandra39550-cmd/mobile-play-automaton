@@ -493,12 +493,18 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     
     const response = await fetch(statusUrl, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json', ...ngrokBypassHeaders },
+      headers: {
+        'Content-Type': 'application/json',
+        ...ngrokBypassHeaders,
+        'User-Agent': 'Lovable-Bot/1.0',
+        'Accept': 'application/json',
+      },
       signal: AbortSignal.timeout(5000)
     })
     
     if (!response.ok) {
-      console.error('❌ ADB server request failed:', response.status)
+      const bodyText = await response.text().catch(() => '')
+      console.error('❌ ADB server request failed:', response.status, bodyText.slice(0, 200))
       return false
     }
     
