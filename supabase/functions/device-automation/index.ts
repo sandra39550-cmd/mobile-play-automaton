@@ -489,7 +489,7 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
   }
 }
 
-async function checkADBConnection(deviceId: string, supabaseClient?: any): Promise<boolean> {
+async function checkADBConnection(deviceId: string, supabaseClient?: any): Promise<boolean | null> {
   try {
     let adbServerUrl: string | null = null
     
@@ -498,7 +498,7 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
         adbServerUrl = await getAdbServerUrl(supabaseClient)
       } catch (error) {
         console.error('⚠️ Could not get ADB server URL:', error.message)
-        return false
+        return null
       }
     } else {
       adbServerUrl = Deno.env.get('ADB_SERVER_URL') || null
@@ -506,7 +506,7 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     
     if (!adbServerUrl) {
       console.error('⚠️ ADB_SERVER_URL not configured')
-      return false
+      return null
     }
 
     const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
@@ -528,6 +528,9 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '')
       console.error('❌ ADB server request failed:', response.status, bodyText.slice(0, 200))
+      if (bodyText.includes('ERR_NGROK_725') || bodyText.toLowerCase().includes('bandwidth limit')) {
+        return null
+      }
       return false
     }
     
