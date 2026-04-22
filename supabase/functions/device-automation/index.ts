@@ -457,8 +457,8 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
     }
 
     const isConnected = await checkADBConnection(device.device_id, supabaseClient)
+    const newStatus = isConnected === null ? device.status : (isConnected ? 'online' : 'offline')
     
-    const newStatus = isConnected ? 'online' : 'offline'
     await supabaseClient
       .from('devices')
       .update({ 
@@ -473,7 +473,8 @@ async function checkDeviceStatus(supabaseClient: any, deviceId: string) {
     return new Response(JSON.stringify({ 
       success: true, 
       status: newStatus,
-      deviceId: device.device_id
+      deviceId: device.device_id,
+      reachable: isConnected !== null
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
