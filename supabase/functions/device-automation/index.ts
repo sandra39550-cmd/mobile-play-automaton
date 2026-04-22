@@ -514,8 +514,10 @@ async function checkADBConnection(deviceId: string, supabaseClient?: any): Promi
     console.log('📱 Connected devices via ADB:', JSON.stringify(connectedDevices))
     
     const isConnected = connectedDevices.some((d: any) => {
-      const matchesSerial = d.id === deviceId || d.serial === deviceId
-      const isDevice = d.status === 'device' || d.type === 'device'
+      const matchesSerial = d.id === deviceId || d.serial === deviceId || d.device_id === deviceId
+      const normalizedStatus = String(d.status || '').toLowerCase()
+      const normalizedAdbStatus = String(d.adbStatus || d.adb_status || d.type || '').toLowerCase()
+      const isDevice = normalizedAdbStatus === 'device' || normalizedStatus === 'device' || normalizedStatus === 'online'
       return matchesSerial && isDevice
     })
     
