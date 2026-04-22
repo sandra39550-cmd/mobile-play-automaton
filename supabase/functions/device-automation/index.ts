@@ -204,6 +204,7 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
   console.log('Connecting device:', deviceInfo)
   
   let realDeviceId = deviceInfo.deviceId
+  let deviceStatus = false
   const adbServerUrl = await getAdbServerUrl(supabaseClient)
   
   if (adbServerUrl) {
@@ -211,17 +212,35 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
       const baseUrl = adbServerUrl.startsWith('http') ? adbServerUrl : `http://${adbServerUrl}`
       const devicesResponse = await fetch(`${baseUrl}/devices`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...ngrokBypassHeaders,
+          'User-Agent': 'Lovable-Bot/1.0',
+          'Accept': 'application/json',
+        },
         signal: AbortSignal.timeout(5000)
       })
       
       if (devicesResponse.ok) {
         const devicesResult = await devicesResponse.json()
         const connectedDevices = devicesResult.devices || []
+        const matchedDevice = connectedDevices.find((d: any) =>
+          d.id === deviceInfo.deviceId ||
+          d.serial === deviceInfo.deviceId ||
+          d.device_id === deviceInfo.deviceId ||
+          d.status === 'online' ||
+          d.adbStatus === 'device'
+        )
         
-        if (connectedDevices.length > 0) {
-          realDeviceId = connectedDevices[0].id
-          console.log(`Using real ADB device ID: ${realDeviceId}`)
+        if (matchedDevice) {
+          realDeviceId = matchedDevice.id || matchedDevice.serial || matchedDevice.device_id || realDeviceId
+          const normalizedStatus = String(matchedDevice.status || '').toLowerCase()
+          const normalizedAdbStatus = String(matchedDevice.adbStatus || matchedDevice.adb_status || matchedDevice.type || '').toLowerCase()
+          deviceStatus = normalizedAdbStatus === 'device' || normalizedStatus === 'device' || normalizedStatus === 'online'
+          console.log(`Using matched ADB device ID: ${realDeviceId}, status: ${deviceStatus ? 'online' : 'offline'}`)
+        } else if (connectedDevices.length > 0) {
+          realDeviceId = connectedDevices[0].id || realDeviceId
+          console.log(`Using fallback ADB device ID: ${realDeviceId}`)
         }
       }
     } catch (error) {
@@ -229,7 +248,9 @@ async function connectDevice(supabaseClient: any, userId: string, deviceInfo: an
     }
   }
   
-  const deviceStatus = await checkADBConnection(realDeviceId, supabaseClient)
+  if (!deviceStatus) {
+    deviceStatus = await checkADBConnection(realDeviceId, supabaseClient)
+  }
   
   const { data: existingDevice } = await supabaseClient
     .from('devices')
