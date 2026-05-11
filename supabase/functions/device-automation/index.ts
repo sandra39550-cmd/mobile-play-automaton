@@ -185,6 +185,8 @@ serve(async (req) => {
         return await transferKnowledge(supabaseClient, payload.targetGame, payload.targetState)
       case 'zero_shot_plan':
         return await zeroShotPlan(supabaseClient, payload.perception, payload.gameName, payload.transferredTemplates)
+      case 'play_tilepark':
+        return await playTileParkServerSide(supabaseClient, payload.deviceId, payload.rounds || 30)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -2699,4 +2701,119 @@ async function transferKnowledge(supabaseClient: any, targetGame: string, target
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
+}
+
+// ============================================================================
+// SERVER-SIDE TILE PARK PLAYER
+// Launches Tile Park and runs the Gemini agent loop entirely in the edge runtime
+// (no browser polling). Uses EdgeRuntime.waitUntil so the HTTP response returns
+// immediately while play continues in the background.
+// ============================================================================
+async function playTileParkServerSide(
+  supabaseClient: any,
+  hardwareDeviceId: string,
+  rounds: number
+) {
+  console.log(`🎮 [play-tilepark] Request: deviceId=${hardwareDeviceId} rounds=${rounds}`)
+
+  if (!hardwareDeviceId) {
+    return new Response(JSON.stringify({ success: false, error: 'Missing deviceId' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+
+  // 1. Launch the game (synchronous so we can report immediate failures)
+  let launchResp: Response
+  try {
+    launchResp = await startBotSession(supabaseClient, null as any, {
+      deviceId: hardwareDeviceId,
+      gameName: 'Tile Park',
+      packageName: 'funvent.tilepark',
+      config: { rounds, serverSide: true },
+    })
+  } catch (e: any) {
+    console.error('🎮 [play-tilepark] Launch threw:', e)
+    return new Response(JSON.stringify({ success: false, error: e.message || String(e) }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+
+  const launchData = await launchResp.clone().json().catch(() => ({}))
+  if (!launchData?.success || !launchData?.launched) {
+    console.error('🎮 [play-tilepark] Launch failed:', launchData)
+    return new Response(JSON.stringify({
+      success: false,
+      error: launchData?.launchMessage || launchData?.error || 'Failed to launch Tile Park',
+      launchData,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  }
+
+  const sessionId = launchData.session?.id
+  const hwId = launchData.hardwareDeviceId || hardwareDeviceId
+  console.log(`🎮 [play-tilepark] Launched. session=${sessionId} hw=${hwId}. Scheduling background loop.`)
+
+  // 2. Run the agent loop in the background. The HTTP response returns now.
+  const runner = async () => {
+    try {
+      // Give the game 4s to load before first capture
+      await new Promise(r => setTimeout(r, 4000))
+
+      for (let round = 1; round <= rounds; round++) {
+        // Check if user stopped the session
+        const { data: s } = await supabaseClient
+          .from('bot_sessions')
+          .select('status')
+          .eq('id', sessionId)
+          .single()
+        if (!s || s.status !== 'running') {
+          console.log(`🛑 [play-tilepark] Session ${sessionId} no longer running (status=${s?.status}). Stopping.`)
+          break
+        }
+
+        console.log(`🔁 [play-tilepark] Round ${round}/${rounds}`)
+        const r = await runBotLoop(supabaseClient, sessionId, hwId, 1)
+        const body = await r.clone().json().catch(() => ({}))
+        if (!body?.success) {
+          console.warn(`⚠️ [play-tilepark] Round ${round} failed: ${body?.error}`)
+        }
+        // Pace rounds (game animations + rate limits)
+        if (round < rounds) await new Promise(r => setTimeout(r, 2000))
+      }
+
+      await supabaseClient
+        .from('bot_sessions')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', sessionId)
+        .eq('status', 'running')
+
+      console.log(`🏁 [play-tilepark] Finished session ${sessionId}`)
+    } catch (e: any) {
+      console.error('🎮 [play-tilepark] Background loop error:', e)
+      await supabaseClient
+        .from('bot_sessions')
+        .update({
+          status: 'error',
+          error_message: e.message || String(e),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessionId)
+    }
+  }
+
+  // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(runner())
+  } else {
+    runner()
+  }
+
+  return new Response(JSON.stringify({
+    success: true,
+    started: true,
+    sessionId,
+    hardwareDeviceId: hwId,
+    rounds,
+    message: `Gemini agent started on device ${hwId} for ${rounds} rounds`,
+  }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 }
