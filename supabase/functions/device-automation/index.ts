@@ -185,6 +185,8 @@ serve(async (req) => {
         return await transferKnowledge(supabaseClient, payload.targetGame, payload.targetState)
       case 'zero_shot_plan':
         return await zeroShotPlan(supabaseClient, payload.perception, payload.gameName, payload.transferredTemplates)
+      case 'play_tilepark':
+        return await playTileParkServerSide(supabaseClient, payload.deviceId, payload.rounds || 30)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
