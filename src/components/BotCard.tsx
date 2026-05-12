@@ -153,7 +153,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
       }
 
       if (data.success && data.launched) {
-        toast.success(`🎮 ${game.name} launched! Starting agent in 3 seconds...`, { id: 'launch-game', duration: 3000 });
+        toast.success(`🎮 ${game.name} launched! Waiting 8s for splash + Level 1 to load...`, { id: 'launch-game', duration: 8000 });
         
         // Store session info
         const sessionId = data.session?.id;
@@ -162,14 +162,14 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
         setCurrentSessionId(sessionId);
         setHardwareDeviceId(hwDeviceId);
         
-        // Auto-start the bot after delay for game to load
+        // Auto-start the bot after delay for game splash + Level 1 to load
         setTimeout(() => {
           if (sessionId) {
             setIsPlaying(true);
-            toast.success(`🤖 Agent is now playing ${game.name}!`, { duration: 3000 });
+            toast.success(`🤖 Gemini agent is now playing ${game.name} — matching tiles on Level 1!`, { duration: 4000 });
             startBotLoop(sessionId, hwDeviceId);
           }
-        }, 3000);
+        }, 8000);
       } else {
         const errorMsg = data.launchMessage || data.error || 'Unknown error';
         toast.error(`Failed to launch: ${errorMsg}`, { id: 'launch-game' });
