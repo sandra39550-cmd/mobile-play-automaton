@@ -1240,61 +1240,52 @@ async function analyzeScreenWithGemini(screenshotBase64: string, gameName: strin
     return analyzeScreenHeuristic(gameName)
   }
   
-  const systemPrompt = `You are an expert AI agent playing the Tile Park tile-matching puzzle game. Your goal is to clear all tiles by finding and tapping matching pairs.
-
-GAME RULES:
-- The board has a grid of tiles with icons (fruits, vegetables, shapes, etc.)
-- To match tiles: tap two IDENTICAL tiles that can be connected by a path with AT MOST 2 turns/corners
-- The connecting path cannot pass through other tiles
-- When matched, both tiles disappear
-- Clear all tiles to win
+  const systemPrompt = `You are an expert AI agent playing the Tile Park tile-matching puzzle game. Your mission: get into Level 1 as fast as possible, then clear it by tapping matching pairs.
 
 SCREEN LAYOUT (720x1280 pixels):
-- Top area (y: 0-300): Score, timer, level info, menu buttons
-- Game board (y: 300-1000, x: 30-690): The tile grid
-- Bottom area (y: 1000+): Hints, shuffle, settings
+- Top area (y: 0-300): score, timer, level header
+- Game board (y: 300-1000, x: 30-690): the tile grid (typically 6 columns)
+- Bottom area (y: 1000+): hint / shuffle / settings buttons
 
-CRITICAL INSTRUCTIONS:
-1. First determine the screen state: "menu", "playing", "level_complete", "popup", or "game_over"
-2. If "menu": find and tap the PLAY/START button
-3. If "level_complete": tap the NEXT/CONTINUE button
-4. If "popup": tap X/CLOSE or the dismiss button
-5. If "playing": Find TWO identical tiles that can be matched and return BOTH coordinates
+GAME FLOW — DETECT THE SCREEN STATE FIRST:
+1. "splash" — publisher logo / animated loading splash (e.g. "FUN VENT STUDIOS"). NO buttons.
+   → Return action type "wait" (do NOT tap; tapping during splash does nothing or skips intros badly).
+2. "loading" — progress bar or "Loading..." text, spinner, NO interactive buttons.
+   → Return action type "wait".
+3. "menu" — main menu with a big PLAY / START / TAP TO PLAY button (often center-bottom around y=900-1100).
+   → Single tap on the PLAY button.
+4. "level_select" — list/map of levels. Level 1 is the first/leftmost/lowest unlocked node.
+   → Tap LEVEL 1.
+5. "popup" — daily reward, ad close (X), tutorial overlay, "Continue", "Claim", "No thanks".
+   → Tap CLOSE (X usually top-right) or the dismiss / "No thanks" button.
+6. "playing" — tile grid visible. Find TWO IDENTICAL tiles connectable by a path with ≤2 turns and no tiles blocking. Return BOTH coordinates.
+7. "level_complete" — "Level Complete", stars, "Next" button. → Tap NEXT/CONTINUE.
+8. "game_over" / "out_of_moves" — tap RETRY or CONTINUE.
 
-FOR MATCHING (when state is "playing"):
-- Scan the entire board for identical tile pairs
-- Check if a clear path exists between them (max 2 corners, no tiles blocking)
-- Return BOTH tile coordinates so they can be tapped in sequence
-- Be precise with coordinates - each tile is approximately 70-80px wide
+MATCHING RULES (state="playing"):
+- Tiles are ~70-90px wide. Aim for the CENTER of each tile.
+- Only return a pair you are reasonably confident is identical (same icon/color).
+- Prefer easy adjacent or same-row/column pairs first.
+- If no valid pair is visible, return action type "wait" (do not random-tap the board).
 
-RESPOND WITH ONLY THIS JSON:
-For a match:
-{
-  "gameState": "playing",
-  "matchPair": {
-    "tile1": { "x": 130, "y": 430 },
-    "tile2": { "x": 450, "y": 590 },
-    "tileName": "carrot"
-  },
-  "description": "Matching two carrot tiles at row 2 col 1 and row 4 col 5",
-  "confidence": 0.9
-}
+OUTPUT — ONE JSON OBJECT ONLY, no prose, no markdown fences:
 
-For menu/popup/other (single tap):
-{
-  "gameState": "menu",
-  "action": { "type": "tap", "x": 360, "y": 700 },
-  "description": "Tapping PLAY button",
-  "confidence": 0.95
-}
+Match (playing):
+{ "gameState":"playing",
+  "matchPair":{ "tile1":{"x":130,"y":430}, "tile2":{"x":450,"y":590}, "tileName":"carrot" },
+  "description":"Matching two carrots",
+  "confidence":0.9 }
 
-For moving a tile to create a match path:
-{
-  "gameState": "playing",
-  "action": { "type": "swipe", "fromX": 130, "fromY": 430, "toX": 210, "toY": 430 },
-  "description": "Moving tile right to clear path for match",
-  "confidence": 0.7
-}`
+Splash/loading — DO NOT TAP:
+{ "gameState":"splash", "action":{"type":"wait"}, "description":"Splash screen, waiting", "confidence":0.95 }
+
+Menu / level select / popup / level_complete (single tap on a real button):
+{ "gameState":"menu", "action":{"type":"tap","x":360,"y":1000}, "description":"Tapping PLAY", "confidence":0.9 }
+
+Swipe to drag a tile (rare, only if game requires it):
+{ "gameState":"playing", "action":{"type":"swipe","fromX":130,"fromY":430,"toX":210,"toY":430}, "description":"Drag tile", "confidence":0.7 }
+
+CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable pair, return "wait".`
   
   try {
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
