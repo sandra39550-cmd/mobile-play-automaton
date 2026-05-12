@@ -1356,6 +1356,15 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           }
         }
         
+        // Handle "wait" action — splash/loading screens, do nothing this iteration
+        if (parsed.action?.type === 'wait') {
+          console.log(`⏳ Wait state (${parsed.gameState}): ${parsed.description}`)
+          return {
+            action: null,
+            description: `⏳ ${parsed.description || 'Waiting for game to be ready'}`
+          }
+        }
+        
         // Handle swipe/move action
         if (parsed.action) {
           if (parsed.action.type === 'swipe' && parsed.action.fromX != null && parsed.action.toX != null) {
