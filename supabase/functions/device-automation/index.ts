@@ -1479,7 +1479,26 @@ async function executeRealAction(baseUrl: string, action: DeviceAction): Promise
     const executionTime = Date.now() - startTime
     
     if (!response.ok) {
-      console.error('Action failed:', await response.text())
+      const errorText = await response.text()
+      console.error('Action failed:', errorText)
+
+      // Some local Tile Park servers expose only /play-tilepark and reject generic tap actions.
+      // Fall back to that endpoint so the device still receives real Tile Park moves.
+      if (action.type === 'tap' && action.deviceId && errorText.includes('Unsupported action type')) {
+        const fallbackUrl = `${baseUrl}/play-tilepark?deviceId=${encodeURIComponent(action.deviceId)}&rounds=1`
+        const fallbackResponse = await fetch(fallbackUrl, {
+          method: 'GET',
+          headers: {
+            ...ngrokBypassHeaders,
+            'User-Agent': 'Lovable-Bot/1.0',
+            'Accept': 'text/html, application/json',
+          },
+          signal: AbortSignal.timeout(30000)
+        })
+
+        return { success: fallbackResponse.ok, executionTime: Date.now() - startTime }
+      }
+
       return { success: false, executionTime }
     }
     
