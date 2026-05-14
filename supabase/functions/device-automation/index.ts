@@ -1400,7 +1400,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
             
             return {
               action: { type: 'tap' as const, coordinates: { x, y } },
-              description: parsed.description || `Tap at (${x}, ${y})`
+              description: (parsed.description || `Tap at (${x}, ${y})`) + instrTag
             }
           }
         }
