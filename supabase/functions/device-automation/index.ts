@@ -1370,7 +1370,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           console.log(`⏳ Wait state (${parsed.gameState}): ${parsed.description}`)
           return {
             action: null,
-            description: `⏳ ${parsed.description || 'Waiting for game to be ready'}`
+            description: `⏳ ${parsed.description || 'Waiting for game to be ready'}` + instrTag
           }
         }
         
