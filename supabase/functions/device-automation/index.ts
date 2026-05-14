@@ -1389,7 +1389,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
                 toCoordinates: { x: toX, y: toY },
                 duration: 400,
               },
-              description: parsed.description || `Moving tile from (${fromX},${fromY}) to (${toX},${toY})`
+              description: (parsed.description || `Moving tile from (${fromX},${fromY}) to (${toX},${toY})`) + instrTag
             }
           }
           
