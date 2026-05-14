@@ -1391,6 +1391,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
                 toCoordinates: { x: toX, y: toY },
                 duration: 400,
               },
+              gameState: parsed.gameState, instruction: parsed.instruction,
               description: (parsed.description || `Moving tile from (${fromX},${fromY}) to (${toX},${toY})`) + instrTag
             }
           }
@@ -1402,6 +1403,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
             
             return {
               action: { type: 'tap' as const, coordinates: { x, y } },
+              gameState: parsed.gameState, instruction: parsed.instruction,
               description: (parsed.description || `Tap at (${x}, ${y})`) + instrTag
             }
           }
