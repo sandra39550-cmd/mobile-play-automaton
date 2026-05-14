@@ -1361,6 +1361,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           return {
             action: { type: 'tap' as const, coordinates: tile1 },
             matchPair: { tile1, tile2 },
+            gameState: parsed.gameState, instruction: parsed.instruction,
             description: (parsed.description || `Matching ${parsed.matchPair.tileName || 'tiles'}`) + instrTag
           }
         }
@@ -1370,6 +1371,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           console.log(`⏳ Wait state (${parsed.gameState}): ${parsed.description}`)
           return {
             action: null,
+            gameState: parsed.gameState, instruction: parsed.instruction,
             description: `⏳ ${parsed.description || 'Waiting for game to be ready'}` + instrTag
           }
         }
