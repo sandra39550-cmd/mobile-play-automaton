@@ -1339,6 +1339,8 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
       try {
         const parsed = JSON.parse(jsonMatch[0])
         console.log('✅ Parsed AI response:', JSON.stringify(parsed))
+        if (parsed.instruction) console.log(`📖 SIMA read instruction: "${parsed.instruction}" (state=${parsed.gameState})`)
+        const instrTag = parsed.instruction ? ` [📖 "${String(parsed.instruction).substring(0, 80)}"]` : ''
         
         // Handle matching pair response
         if (parsed.matchPair && parsed.matchPair.tile1 && parsed.matchPair.tile2) {
