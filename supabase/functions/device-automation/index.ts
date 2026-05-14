@@ -1308,7 +1308,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Analyze this Tile Park game screenshot. Find two matching tiles that can be connected and return their exact pixel coordinates. If not playing, identify the button to tap.' },
+              { type: 'text', text: 'SIMA 2 task: read any on-screen instructions, then take ONE action that brings us closer to completing Level 1 of Tile Park. If a tutorial overlay or arrow is shown, follow it exactly. Otherwise advance through menus to Level 1, then match tiles. Include the literal instruction text you read in the "instruction" field.' },
               {
                 type: 'image_url',
                 image_url: { url: screenshotBase64 }
