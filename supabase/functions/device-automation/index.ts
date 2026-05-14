@@ -1007,7 +1007,42 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
         : analyzeScreenHeuristic(session.game_name)
       
       console.log(`🎯 AI result: ${analysis.description}`)
-      
+
+      // Detect terminal states (Level 1 success / failure) and record reason
+      const aGameState = (analysis as any).gameState as string | undefined
+      const aInstruction = (analysis as any).instruction as string | undefined
+      if (aGameState === 'level_complete' || aGameState === 'game_over') {
+        const isWin = aGameState === 'level_complete'
+        const reason = isWin
+          ? `✅ LEVEL 1 COMPLETE — ${analysis.description}${aInstruction ? ` | read: "${aInstruction}"` : ''}`
+          : `❌ LEVEL 1 FAILED (game_over) — ${analysis.description}${aInstruction ? ` | read: "${aInstruction}"` : ''}`
+        console.log(`🏁 Terminal state detected: ${reason}`)
+
+        await supabaseClient.from('bot_actions').insert({
+          session_id: sessionId,
+          action_type: isWin ? 'level_complete' : 'level_failed',
+          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason },
+          success: isWin,
+          execution_time_ms: 0,
+        })
+
+        await supabaseClient
+          .from('bot_sessions')
+          .update({
+            status: isWin ? 'completed' : 'error',
+            level_progress: isWin ? 1 : 0,
+            actions_performed: actionsPerformed,
+            error_message: reason,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', sessionId)
+
+        return new Response(JSON.stringify({
+          success: true, terminal: true, win: isWin, reason,
+          actionsPerformed: results.length, totalActions: actionsPerformed,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
       // 3. Execute actions
       if (analysis.action) {
         // For tile matching: tap first tile, wait, tap second tile
