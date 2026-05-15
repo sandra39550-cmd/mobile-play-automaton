@@ -1078,7 +1078,7 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       if (aGameState === 'level_complete' || aGameState === 'game_over') {
         const isWin = aGameState === 'level_complete'
         // Track retry attempts in session.config so each failure is logged separately
-        const cfg: any = (session.config && typeof session.config === 'object') ? { ...session.config } : {}
+        const cfg: any = sessionConfig
         const attemptNum = (cfg.level1_attempts || 0) + 1
         cfg.level1_attempts = attemptNum
 
@@ -1091,10 +1091,37 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
         await supabaseClient.from('bot_actions').insert({
           session_id: sessionId,
           action_type: isWin ? 'level_complete' : 'level_failed',
-          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason, attempt: attemptNum },
+          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason, attempt: attemptNum, goal: currentGoal },
           success: isWin,
           execution_time_ms: 0,
         })
+
+        // ===== Self-improvement: store experience for next attempt to learn from =====
+        try {
+          const { data: actionTrail } = await supabaseClient
+            .from('bot_actions')
+            .select('action_type, coordinates, success, timestamp')
+            .eq('session_id', sessionId)
+            .order('timestamp', { ascending: false })
+            .limit(30)
+          await supabaseClient.from('agent_experiences').insert({
+            session_id: sessionId,
+            game_name: session.game_name,
+            game_state: aGameState,
+            objective: 'Complete Level 1',
+            outcome: isWin ? 'success' : 'failed',
+            success: isWin,
+            reward_score: isWin ? 1 : 0,
+            reward_reasoning: reason,
+            action_sequence: actionTrail || [],
+            steps_count: actionsPerformed,
+            total_execution_ms: 0,
+            perception_summary: { gameState: aGameState, instruction: aInstruction, lastDescription: analysis.description, attempt: attemptNum },
+          })
+          console.log(`📚 Stored agent_experience (outcome=${isWin ? 'success' : 'failed'})`)
+        } catch (expErr) {
+          console.warn(`⚠️ Failed to store agent_experience:`, expErr)
+        }
 
         if (isWin) {
           await supabaseClient
@@ -1117,6 +1144,9 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
 
         // FAILURE → automatic retry: relaunch the level and keep looping
         console.log(`🔁 Auto-retry: relaunching ${session.package_name} for attempt #${attemptNum + 1}`)
+        // Reset goal stack for the next attempt
+        cfg.goals = ['dismiss popups', 'reach Level 1', 'follow tutorial', 'clear Level 1']
+        sessionConfig = cfg
         await supabaseClient
           .from('bot_sessions')
           .update({
