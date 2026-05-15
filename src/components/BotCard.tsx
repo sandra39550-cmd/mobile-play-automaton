@@ -280,6 +280,10 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
               </p>
             )}
           </div>
+
+          {isPlaying && currentSessionId && (
+            <AgentChatPanel sessionId={currentSessionId} />
+          )}
         </div>
       </div>
       
