@@ -1013,34 +1013,67 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       const aInstruction = (analysis as any).instruction as string | undefined
       if (aGameState === 'level_complete' || aGameState === 'game_over') {
         const isWin = aGameState === 'level_complete'
+        // Track retry attempts in session.config so each failure is logged separately
+        const cfg: any = (session.config && typeof session.config === 'object') ? { ...session.config } : {}
+        const attemptNum = (cfg.level1_attempts || 0) + 1
+        cfg.level1_attempts = attemptNum
+
         const reason = isWin
-          ? `✅ LEVEL 1 COMPLETE — ${analysis.description}${aInstruction ? ` | read: "${aInstruction}"` : ''}`
-          : `❌ LEVEL 1 FAILED (game_over) — ${analysis.description}${aInstruction ? ` | read: "${aInstruction}"` : ''}`
+          ? `✅ LEVEL 1 COMPLETE on attempt #${attemptNum} — ${analysis.description}${aInstruction ? ` | read: "${aInstruction}"` : ''}`
+          : `❌ LEVEL 1 FAILED (attempt #${attemptNum}) — ${analysis.description}${aInstruction ? ` | read: "${aInstruction}"` : ''}`
         console.log(`🏁 Terminal state detected: ${reason}`)
 
+        // Log this attempt as its own bot_action row
         await supabaseClient.from('bot_actions').insert({
           session_id: sessionId,
           action_type: isWin ? 'level_complete' : 'level_failed',
-          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason },
+          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason, attempt: attemptNum },
           success: isWin,
           execution_time_ms: 0,
         })
 
+        if (isWin) {
+          await supabaseClient
+            .from('bot_sessions')
+            .update({
+              status: 'completed',
+              level_progress: 1,
+              actions_performed: actionsPerformed,
+              error_message: reason,
+              config: cfg,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sessionId)
+
+          return new Response(JSON.stringify({
+            success: true, terminal: true, win: true, reason, attempts: attemptNum,
+            actionsPerformed: results.length, totalActions: actionsPerformed,
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        // FAILURE → automatic retry: relaunch the level and keep looping
+        console.log(`🔁 Auto-retry: relaunching ${session.package_name} for attempt #${attemptNum + 1}`)
         await supabaseClient
           .from('bot_sessions')
           .update({
-            status: isWin ? 'completed' : 'error',
-            level_progress: isWin ? 1 : 0,
+            status: 'retrying',
             actions_performed: actionsPerformed,
             error_message: reason,
+            config: cfg,
             updated_at: new Date().toISOString(),
           })
           .eq('id', sessionId)
 
-        return new Response(JSON.stringify({
-          success: true, terminal: true, win: isWin, reason,
-          actionsPerformed: results.length, totalActions: actionsPerformed,
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        try {
+          const relaunch = await launchGameOnDevice(supabaseClient, { device_id: deviceId }, session.package_name)
+          console.log(`🚀 Relaunch result: success=${relaunch.success} — ${relaunch.message}`)
+        } catch (e) {
+          console.warn(`⚠️ Relaunch failed:`, e)
+        }
+        // Give the game a few seconds to load before next perception cycle
+        await new Promise((r) => setTimeout(r, 4000))
+        results.push({ iteration: i + 1, retry: true, attempt: attemptNum, reason })
+        continue
       }
 
       // 3. Execute actions
