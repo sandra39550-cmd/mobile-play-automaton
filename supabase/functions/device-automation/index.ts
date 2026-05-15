@@ -187,6 +187,8 @@ serve(async (req) => {
         return await zeroShotPlan(supabaseClient, payload.perception, payload.gameName, payload.transferredTemplates)
       case 'play_tilepark':
         return await playTileParkServerSide(supabaseClient, payload.deviceId, payload.rounds || 30)
+      case 'send_instruction':
+        return await sendAgentInstruction(supabaseClient, payload.sessionId, payload.instruction)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
@@ -984,29 +986,91 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
     
     const results: any[] = []
     let actionsPerformed = session.actions_performed || 0
-    
+
+    // ======== SIMA 2: Goal stack (load or seed) ========
+    let sessionConfig: any = (session.config && typeof session.config === 'object') ? { ...session.config } : {}
+    if (!Array.isArray(sessionConfig.goals) || sessionConfig.goals.length === 0) {
+      sessionConfig.goals = ['dismiss popups', 'reach Level 1', 'follow tutorial', 'clear Level 1']
+      await supabaseClient.from('bot_sessions').update({ config: sessionConfig, updated_at: new Date().toISOString() }).eq('id', sessionId)
+      console.log(`🎯 Seeded goal stack: ${sessionConfig.goals.join(' → ')}`)
+    }
+
     for (let i = 0; i < iterations; i++) {
       console.log(`🔄 Bot loop iteration ${i + 1}/${iterations}`)
-      
+
       // 1. Take screenshot
       const screenshot = await takeRealScreenshot(baseUrl, deviceId)
-      
+
       if (!screenshot || screenshot.length < 500) {
         console.warn(`⚠️ Screenshot invalid (length: ${screenshot?.length || 0}), skipping`)
         continue
       }
-      
+
       console.log(`🖼️ Screenshot ready (${screenshot.length} chars), calling Gemini AI...`)
-      
+
       // 2. Analyze screenshot with AI
-      const isTilePark = session.game_name.toLowerCase().includes('tile') || 
+      const isTilePark = session.game_name.toLowerCase().includes('tile') ||
           session.package_name.toLowerCase().includes('tilepark')
-      
-      const analysis = isTilePark 
-        ? await analyzeScreenWithGemini(screenshot, session.game_name)
+
+      // ===== Pull live human override (conversational interface) =====
+      let humanOverride: string | undefined
+      const { data: pendingInstr } = await supabaseClient
+        .from('agent_instructions')
+        .select('id, instruction')
+        .eq('session_id', sessionId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (pendingInstr) {
+        humanOverride = pendingInstr.instruction
+        await supabaseClient.from('agent_instructions')
+          .update({ status: 'consumed', consumed_at: new Date().toISOString() })
+          .eq('id', pendingInstr.id)
+        await supabaseClient.from('bot_actions').insert({
+          session_id: sessionId,
+          action_type: 'human_instruction',
+          coordinates: { instruction: humanOverride, instructionId: pendingInstr.id },
+          success: true,
+          execution_time_ms: 0,
+        })
+        console.log(`💬 Human override consumed: "${humanOverride}"`)
+      }
+
+      // ===== Pull recent failure lessons (self-improvement) =====
+      let lessons: string[] = []
+      const { data: recentExp } = await supabaseClient
+        .from('agent_experiences')
+        .select('reward_reasoning, outcome')
+        .eq('game_name', session.game_name)
+        .eq('outcome', 'failed')
+        .order('created_at', { ascending: false })
+        .limit(3)
+      if (recentExp && recentExp.length > 0) {
+        lessons = recentExp.map((e: any) => e.reward_reasoning).filter(Boolean)
+      }
+
+      const currentGoal = sessionConfig.goals[0] || 'clear Level 1'
+
+      const analysis: any = isTilePark
+        ? await analyzeScreenWithGemini(screenshot, session.game_name, { currentGoal, humanOverride, lessons })
         : analyzeScreenHeuristic(session.game_name)
-      
-      console.log(`🎯 AI result: ${analysis.description}`)
+
+      console.log(`🎯 [goal: ${currentGoal}] AI result: ${analysis.description}`)
+
+      // ===== Goal advancement =====
+      if (analysis.goalAchieved && sessionConfig.goals.length > 0) {
+        const completedGoal = sessionConfig.goals.shift()
+        console.log(`✅ Goal completed: "${completedGoal}". Remaining: ${sessionConfig.goals.join(' → ') || '(none)'}`)
+        await supabaseClient.from('bot_actions').insert({
+          session_id: sessionId,
+          action_type: 'goal_complete',
+          coordinates: { goal: completedGoal, remaining: sessionConfig.goals, instruction: analysis.instruction || null },
+          success: true,
+          execution_time_ms: 0,
+        })
+        await supabaseClient.from('bot_sessions').update({ config: sessionConfig, updated_at: new Date().toISOString() }).eq('id', sessionId)
+      }
 
       // Detect terminal states (Level 1 success / failure) and record reason
       const aGameState = (analysis as any).gameState as string | undefined
@@ -1014,7 +1078,7 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       if (aGameState === 'level_complete' || aGameState === 'game_over') {
         const isWin = aGameState === 'level_complete'
         // Track retry attempts in session.config so each failure is logged separately
-        const cfg: any = (session.config && typeof session.config === 'object') ? { ...session.config } : {}
+        const cfg: any = sessionConfig
         const attemptNum = (cfg.level1_attempts || 0) + 1
         cfg.level1_attempts = attemptNum
 
@@ -1027,10 +1091,37 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
         await supabaseClient.from('bot_actions').insert({
           session_id: sessionId,
           action_type: isWin ? 'level_complete' : 'level_failed',
-          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason, attempt: attemptNum },
+          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason, attempt: attemptNum, goal: currentGoal },
           success: isWin,
           execution_time_ms: 0,
         })
+
+        // ===== Self-improvement: store experience for next attempt to learn from =====
+        try {
+          const { data: actionTrail } = await supabaseClient
+            .from('bot_actions')
+            .select('action_type, coordinates, success, timestamp')
+            .eq('session_id', sessionId)
+            .order('timestamp', { ascending: false })
+            .limit(30)
+          await supabaseClient.from('agent_experiences').insert({
+            session_id: sessionId,
+            game_name: session.game_name,
+            game_state: aGameState,
+            objective: 'Complete Level 1',
+            outcome: isWin ? 'success' : 'failed',
+            success: isWin,
+            reward_score: isWin ? 1 : 0,
+            reward_reasoning: reason,
+            action_sequence: actionTrail || [],
+            steps_count: actionsPerformed,
+            total_execution_ms: 0,
+            perception_summary: { gameState: aGameState, instruction: aInstruction, lastDescription: analysis.description, attempt: attemptNum },
+          })
+          console.log(`📚 Stored agent_experience (outcome=${isWin ? 'success' : 'failed'})`)
+        } catch (expErr) {
+          console.warn(`⚠️ Failed to store agent_experience:`, expErr)
+        }
 
         if (isWin) {
           await supabaseClient
@@ -1053,6 +1144,9 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
 
         // FAILURE → automatic retry: relaunch the level and keep looping
         console.log(`🔁 Auto-retry: relaunching ${session.package_name} for attempt #${attemptNum + 1}`)
+        // Reset goal stack for the next attempt
+        cfg.goals = ['dismiss popups', 'reach Level 1', 'follow tutorial', 'clear Level 1']
+        sessionConfig = cfg
         await supabaseClient
           .from('bot_sessions')
           .update({
@@ -1287,13 +1381,21 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
 }
 
 // Enhanced AI Vision Analysis for Tile Park game
-async function analyzeScreenWithGemini(screenshotBase64: string, gameName: string): Promise<{
+async function analyzeScreenWithGemini(
+  screenshotBase64: string,
+  gameName: string,
+  ctx?: { currentGoal?: string; humanOverride?: string; lessons?: string[] }
+): Promise<{
   action: DeviceAction | null
   description: string
   matchPair?: { tile1: { x: number; y: number }; tile2: { x: number; y: number } }
   tiles?: any[]
+  gameState?: string
+  instruction?: string
+  currentGoal?: string
+  goalAchieved?: boolean
 }> {
-  console.log(`🧠 Analyzing ${gameName} with Gemini AI Vision...`)
+  console.log(`🧠 Analyzing ${gameName} with Gemini AI Vision (goal=${ctx?.currentGoal || 'none'}, override=${ctx?.humanOverride ? 'yes' : 'no'}, lessons=${ctx?.lessons?.length || 0})...`)
   
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
   
@@ -1360,7 +1462,13 @@ Menu / level select / popup / level_complete (single tap on a real button):
 Swipe to drag a tile (rare, only if game requires it):
 { "gameState":"playing", "action":{"type":"swipe","fromX":130,"fromY":430,"toX":210,"toY":430}, "description":"Drag tile", "confidence":0.7 }
 
-CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable pair, return "wait".`
+CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable pair, return "wait".
+
+ACTIVE GOAL (from goal stack): "${ctx?.currentGoal || 'clear Level 1'}".
+- Decide if this goal is now satisfied based on the screen.
+- ALWAYS include "currentGoal" (echo the active goal) and "goalAchieved" (boolean) in your JSON.
+${ctx?.lessons?.length ? `\nLESSONS FROM PRIOR FAILED ATTEMPTS — avoid repeating these mistakes:\n${ctx.lessons.map((l, i) => `${i + 1}. ${l}`).join('\n')}` : ''}
+${ctx?.humanOverride ? `\nHUMAN OVERRIDE — the operator just sent this instruction. Treat it as the highest priority and execute it on this turn:\n"""${ctx.humanOverride}"""` : ''}`
   
   try {
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -1376,7 +1484,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'SIMA 2 task: read any on-screen instructions, then take ONE action that brings us closer to completing Level 1 of Tile Park. If a tutorial overlay or arrow is shown, follow it exactly. Otherwise advance through menus to Level 1, then match tiles. Include the literal instruction text you read in the "instruction" field.' },
+              { type: 'text', text: `SIMA 2 task: active goal is "${ctx?.currentGoal || 'clear Level 1'}". ${ctx?.humanOverride ? `The operator just said: "${ctx.humanOverride}". Execute that now if visible on screen. ` : ''}Read on-screen instructions, take ONE action that advances the active goal, and include "currentGoal", "goalAchieved", and the literal "instruction" text you read.` },
               {
                 type: 'image_url',
                 image_url: { url: screenshotBase64 }
@@ -1429,7 +1537,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           return {
             action: { type: 'tap' as const, coordinates: tile1 },
             matchPair: { tile1, tile2 },
-            gameState: parsed.gameState, instruction: parsed.instruction,
+            gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
             description: (parsed.description || `Matching ${parsed.matchPair.tileName || 'tiles'}`) + instrTag
           }
         }
@@ -1439,7 +1547,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           console.log(`⏳ Wait state (${parsed.gameState}): ${parsed.description}`)
           return {
             action: null,
-            gameState: parsed.gameState, instruction: parsed.instruction,
+            gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
             description: `⏳ ${parsed.description || 'Waiting for game to be ready'}` + instrTag
           }
         }
@@ -1459,7 +1567,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
                 toCoordinates: { x: toX, y: toY },
                 duration: 400,
               },
-              gameState: parsed.gameState, instruction: parsed.instruction,
+              gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
               description: (parsed.description || `Moving tile from (${fromX},${fromY}) to (${toX},${toY})`) + instrTag
             }
           }
@@ -1471,7 +1579,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
             
             return {
               action: { type: 'tap' as const, coordinates: { x, y } },
-              gameState: parsed.gameState, instruction: parsed.instruction,
+              gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
               description: (parsed.description || `Tap at (${x}, ${y})`) + instrTag
             }
           }
@@ -2916,4 +3024,29 @@ async function playTileParkServerSide(
     rounds,
     message: `Gemini agent started on device ${hwId} for ${rounds} rounds`,
   }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+}
+
+// ===== SIMA 2: send a live human instruction to a running agent session =====
+async function sendAgentInstruction(supabaseClient: any, sessionId: string, instruction: string) {
+  if (!sessionId || !instruction || typeof instruction !== 'string' || instruction.trim().length === 0) {
+    return new Response(JSON.stringify({ success: false, error: 'sessionId and non-empty instruction required' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
+    })
+  }
+  const trimmed = instruction.trim().slice(0, 500)
+  const { data, error } = await supabaseClient
+    .from('agent_instructions')
+    .insert({ session_id: sessionId, instruction: trimmed, status: 'pending' })
+    .select()
+    .single()
+  if (error) {
+    console.error('send_instruction insert error:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
+    })
+  }
+  console.log(`💬 Queued human instruction for session ${sessionId}: "${trimmed}"`)
+  return new Response(JSON.stringify({ success: true, instruction: data }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
+  })
 }

@@ -6,6 +6,7 @@ import { Play, Square, Settings, TrendingUp, Smartphone } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { AgentChatPanel } from "@/components/AgentChatPanel";
 
 interface BotCardProps {
   game: {
@@ -279,6 +280,10 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
               </p>
             )}
           </div>
+
+          {isPlaying && currentSessionId && (
+            <AgentChatPanel sessionId={currentSessionId} />
+          )}
         </div>
       </div>
       
