@@ -1289,13 +1289,21 @@ async function takeRealScreenshot(baseUrl: string, deviceId: string): Promise<st
 }
 
 // Enhanced AI Vision Analysis for Tile Park game
-async function analyzeScreenWithGemini(screenshotBase64: string, gameName: string): Promise<{
+async function analyzeScreenWithGemini(
+  screenshotBase64: string,
+  gameName: string,
+  ctx?: { currentGoal?: string; humanOverride?: string; lessons?: string[] }
+): Promise<{
   action: DeviceAction | null
   description: string
   matchPair?: { tile1: { x: number; y: number }; tile2: { x: number; y: number } }
   tiles?: any[]
+  gameState?: string
+  instruction?: string
+  currentGoal?: string
+  goalAchieved?: boolean
 }> {
-  console.log(`🧠 Analyzing ${gameName} with Gemini AI Vision...`)
+  console.log(`🧠 Analyzing ${gameName} with Gemini AI Vision (goal=${ctx?.currentGoal || 'none'}, override=${ctx?.humanOverride ? 'yes' : 'no'}, lessons=${ctx?.lessons?.length || 0})...`)
   
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
   
