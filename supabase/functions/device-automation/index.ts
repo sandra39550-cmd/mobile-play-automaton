@@ -187,6 +187,8 @@ serve(async (req) => {
         return await zeroShotPlan(supabaseClient, payload.perception, payload.gameName, payload.transferredTemplates)
       case 'play_tilepark':
         return await playTileParkServerSide(supabaseClient, payload.deviceId, payload.rounds || 30)
+      case 'send_instruction':
+        return await sendAgentInstruction(supabaseClient, payload.sessionId, payload.instruction)
       default:
         return new Response(JSON.stringify({ error: 'Unknown action' }), {
           status: 400,
