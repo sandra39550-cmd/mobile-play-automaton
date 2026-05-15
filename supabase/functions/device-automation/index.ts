@@ -3025,3 +3025,28 @@ async function playTileParkServerSide(
     message: `Gemini agent started on device ${hwId} for ${rounds} rounds`,
   }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 }
+
+// ===== SIMA 2: send a live human instruction to a running agent session =====
+async function sendAgentInstruction(supabaseClient: any, sessionId: string, instruction: string) {
+  if (!sessionId || !instruction || typeof instruction !== 'string' || instruction.trim().length === 0) {
+    return new Response(JSON.stringify({ success: false, error: 'sessionId and non-empty instruction required' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
+    })
+  }
+  const trimmed = instruction.trim().slice(0, 500)
+  const { data, error } = await supabaseClient
+    .from('agent_instructions')
+    .insert({ session_id: sessionId, instruction: trimmed, status: 'pending' })
+    .select()
+    .single()
+  if (error) {
+    console.error('send_instruction insert error:', error)
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
+    })
+  }
+  console.log(`💬 Queued human instruction for session ${sessionId}: "${trimmed}"`)
+  return new Response(JSON.stringify({ success: true, instruction: data }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,
+  })
+}
