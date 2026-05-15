@@ -986,29 +986,91 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
     
     const results: any[] = []
     let actionsPerformed = session.actions_performed || 0
-    
+
+    // ======== SIMA 2: Goal stack (load or seed) ========
+    let sessionConfig: any = (session.config && typeof session.config === 'object') ? { ...session.config } : {}
+    if (!Array.isArray(sessionConfig.goals) || sessionConfig.goals.length === 0) {
+      sessionConfig.goals = ['dismiss popups', 'reach Level 1', 'follow tutorial', 'clear Level 1']
+      await supabaseClient.from('bot_sessions').update({ config: sessionConfig, updated_at: new Date().toISOString() }).eq('id', sessionId)
+      console.log(`🎯 Seeded goal stack: ${sessionConfig.goals.join(' → ')}`)
+    }
+
     for (let i = 0; i < iterations; i++) {
       console.log(`🔄 Bot loop iteration ${i + 1}/${iterations}`)
-      
+
       // 1. Take screenshot
       const screenshot = await takeRealScreenshot(baseUrl, deviceId)
-      
+
       if (!screenshot || screenshot.length < 500) {
         console.warn(`⚠️ Screenshot invalid (length: ${screenshot?.length || 0}), skipping`)
         continue
       }
-      
+
       console.log(`🖼️ Screenshot ready (${screenshot.length} chars), calling Gemini AI...`)
-      
+
       // 2. Analyze screenshot with AI
-      const isTilePark = session.game_name.toLowerCase().includes('tile') || 
+      const isTilePark = session.game_name.toLowerCase().includes('tile') ||
           session.package_name.toLowerCase().includes('tilepark')
-      
-      const analysis = isTilePark 
-        ? await analyzeScreenWithGemini(screenshot, session.game_name)
+
+      // ===== Pull live human override (conversational interface) =====
+      let humanOverride: string | undefined
+      const { data: pendingInstr } = await supabaseClient
+        .from('agent_instructions')
+        .select('id, instruction')
+        .eq('session_id', sessionId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (pendingInstr) {
+        humanOverride = pendingInstr.instruction
+        await supabaseClient.from('agent_instructions')
+          .update({ status: 'consumed', consumed_at: new Date().toISOString() })
+          .eq('id', pendingInstr.id)
+        await supabaseClient.from('bot_actions').insert({
+          session_id: sessionId,
+          action_type: 'human_instruction',
+          coordinates: { instruction: humanOverride, instructionId: pendingInstr.id },
+          success: true,
+          execution_time_ms: 0,
+        })
+        console.log(`💬 Human override consumed: "${humanOverride}"`)
+      }
+
+      // ===== Pull recent failure lessons (self-improvement) =====
+      let lessons: string[] = []
+      const { data: recentExp } = await supabaseClient
+        .from('agent_experiences')
+        .select('reward_reasoning, outcome')
+        .eq('game_name', session.game_name)
+        .eq('outcome', 'failed')
+        .order('created_at', { ascending: false })
+        .limit(3)
+      if (recentExp && recentExp.length > 0) {
+        lessons = recentExp.map((e: any) => e.reward_reasoning).filter(Boolean)
+      }
+
+      const currentGoal = sessionConfig.goals[0] || 'clear Level 1'
+
+      const analysis: any = isTilePark
+        ? await analyzeScreenWithGemini(screenshot, session.game_name, { currentGoal, humanOverride, lessons })
         : analyzeScreenHeuristic(session.game_name)
-      
-      console.log(`🎯 AI result: ${analysis.description}`)
+
+      console.log(`🎯 [goal: ${currentGoal}] AI result: ${analysis.description}`)
+
+      // ===== Goal advancement =====
+      if (analysis.goalAchieved && sessionConfig.goals.length > 0) {
+        const completedGoal = sessionConfig.goals.shift()
+        console.log(`✅ Goal completed: "${completedGoal}". Remaining: ${sessionConfig.goals.join(' → ') || '(none)'}`)
+        await supabaseClient.from('bot_actions').insert({
+          session_id: sessionId,
+          action_type: 'goal_complete',
+          coordinates: { goal: completedGoal, remaining: sessionConfig.goals, instruction: analysis.instruction || null },
+          success: true,
+          execution_time_ms: 0,
+        })
+        await supabaseClient.from('bot_sessions').update({ config: sessionConfig, updated_at: new Date().toISOString() }).eq('id', sessionId)
+      }
 
       // Detect terminal states (Level 1 success / failure) and record reason
       const aGameState = (analysis as any).gameState as string | undefined
