@@ -1370,7 +1370,13 @@ Menu / level select / popup / level_complete (single tap on a real button):
 Swipe to drag a tile (rare, only if game requires it):
 { "gameState":"playing", "action":{"type":"swipe","fromX":130,"fromY":430,"toX":210,"toY":430}, "description":"Drag tile", "confidence":0.7 }
 
-CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable pair, return "wait".`
+CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable pair, return "wait".
+
+ACTIVE GOAL (from goal stack): "${ctx?.currentGoal || 'clear Level 1'}".
+- Decide if this goal is now satisfied based on the screen.
+- ALWAYS include "currentGoal" (echo the active goal) and "goalAchieved" (boolean) in your JSON.
+${ctx?.lessons?.length ? `\nLESSONS FROM PRIOR FAILED ATTEMPTS — avoid repeating these mistakes:\n${ctx.lessons.map((l, i) => `${i + 1}. ${l}`).join('\n')}` : ''}
+${ctx?.humanOverride ? `\nHUMAN OVERRIDE — the operator just sent this instruction. Treat it as the highest priority and execute it on this turn:\n"""${ctx.humanOverride}"""` : ''}`
   
   try {
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -1386,7 +1392,7 @@ CRITICAL: Never invent buttons. If you don't clearly see a button or a matchable
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'SIMA 2 task: read any on-screen instructions, then take ONE action that brings us closer to completing Level 1 of Tile Park. If a tutorial overlay or arrow is shown, follow it exactly. Otherwise advance through menus to Level 1, then match tiles. Include the literal instruction text you read in the "instruction" field.' },
+              { type: 'text', text: `SIMA 2 task: active goal is "${ctx?.currentGoal || 'clear Level 1'}". ${ctx?.humanOverride ? `The operator just said: "${ctx.humanOverride}". Execute that now if visible on screen. ` : ''}Read on-screen instructions, take ONE action that advances the active goal, and include "currentGoal", "goalAchieved", and the literal "instruction" text you read.` },
               {
                 type: 'image_url',
                 image_url: { url: screenshotBase64 }
