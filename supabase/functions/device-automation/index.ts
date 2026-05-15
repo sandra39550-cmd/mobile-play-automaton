@@ -1445,7 +1445,7 @@ ${ctx?.humanOverride ? `\nHUMAN OVERRIDE — the operator just sent this instruc
           return {
             action: { type: 'tap' as const, coordinates: tile1 },
             matchPair: { tile1, tile2 },
-            gameState: parsed.gameState, instruction: parsed.instruction,
+            gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
             description: (parsed.description || `Matching ${parsed.matchPair.tileName || 'tiles'}`) + instrTag
           }
         }
@@ -1455,7 +1455,7 @@ ${ctx?.humanOverride ? `\nHUMAN OVERRIDE — the operator just sent this instruc
           console.log(`⏳ Wait state (${parsed.gameState}): ${parsed.description}`)
           return {
             action: null,
-            gameState: parsed.gameState, instruction: parsed.instruction,
+            gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
             description: `⏳ ${parsed.description || 'Waiting for game to be ready'}` + instrTag
           }
         }
@@ -1475,7 +1475,7 @@ ${ctx?.humanOverride ? `\nHUMAN OVERRIDE — the operator just sent this instruc
                 toCoordinates: { x: toX, y: toY },
                 duration: 400,
               },
-              gameState: parsed.gameState, instruction: parsed.instruction,
+              gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
               description: (parsed.description || `Moving tile from (${fromX},${fromY}) to (${toX},${toY})`) + instrTag
             }
           }
@@ -1487,7 +1487,7 @@ ${ctx?.humanOverride ? `\nHUMAN OVERRIDE — the operator just sent this instruc
             
             return {
               action: { type: 'tap' as const, coordinates: { x, y } },
-              gameState: parsed.gameState, instruction: parsed.instruction,
+              gameState: parsed.gameState, instruction: parsed.instruction, currentGoal: parsed.currentGoal, goalAchieved: !!parsed.goalAchieved,
               description: (parsed.description || `Tap at (${x}, ${y})`) + instrTag
             }
           }
