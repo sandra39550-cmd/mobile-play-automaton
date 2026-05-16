@@ -145,7 +145,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
             payload: {
               sessionId: sessionId,
               deviceId: deviceId,
-              iterations: 1
+              iterations: 1,
+              objective: objectiveRef.current,
             }
           }
         });
