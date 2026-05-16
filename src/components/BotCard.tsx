@@ -2,10 +2,23 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Settings, TrendingUp, Smartphone } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Play, Square, Settings, TrendingUp, Smartphone, Brain, BookOpen, Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+interface SimaEvent {
+  id: string;
+  timestamp: string;
+  action_type: string;
+  success: boolean;
+  skill: string | null;
+  instruction: string | null;
+  reasoning: string | null;
+  description: string | null;
+  gameState: string | null;
+}
 
 interface BotCardProps {
   game: {
@@ -32,16 +45,76 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
   const [actionsCount, setActionsCount] = useState(0);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [hardwareDeviceId, setHardwareDeviceId] = useState<string | null>(null);
+  const [objective, setObjective] = useState<string>(
+    "Read on-screen instructions, navigate to Level 1, and complete Level 1 of Tile Park."
+  );
+  const [showObjective, setShowObjective] = useState(false);
+  const [simaEvents, setSimaEvents] = useState<SimaEvent[]>([]);
+  const [showSima, setShowSima] = useState(true);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const objectiveRef = useRef(objective);
+  useEffect(() => { objectiveRef.current = objective; }, [objective]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (playIntervalRef.current) {
-        clearInterval(playIntervalRef.current);
-      }
+      if (playIntervalRef.current) clearInterval(playIntervalRef.current);
     };
   }, []);
+
+  // Subscribe to live bot_actions for the active session — SIMA reasoning feed
+  useEffect(() => {
+    if (!currentSessionId) return;
+    setSimaEvents([]);
+
+    // Backfill last 20
+    supabase
+      .from('bot_actions')
+      .select('id, timestamp, action_type, success, coordinates')
+      .eq('session_id', currentSessionId)
+      .order('timestamp', { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        if (!data) return;
+        const mapped: SimaEvent[] = data.map((r: any) => ({
+          id: r.id,
+          timestamp: r.timestamp,
+          action_type: r.action_type,
+          success: !!r.success,
+          skill: r.coordinates?.skill ?? null,
+          instruction: r.coordinates?.instruction ?? null,
+          reasoning: r.coordinates?.reasoning ?? null,
+          description: r.coordinates?.description ?? null,
+          gameState: r.coordinates?.gameState ?? null,
+        }));
+        setSimaEvents(mapped);
+      });
+
+    const channel = supabase
+      .channel(`bot-actions-${currentSessionId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'bot_actions', filter: `session_id=eq.${currentSessionId}` },
+        (payload) => {
+          const r: any = payload.new;
+          const evt: SimaEvent = {
+            id: r.id,
+            timestamp: r.timestamp,
+            action_type: r.action_type,
+            success: !!r.success,
+            skill: r.coordinates?.skill ?? null,
+            instruction: r.coordinates?.instruction ?? null,
+            reasoning: r.coordinates?.reasoning ?? null,
+            description: r.coordinates?.description ?? null,
+            gameState: r.coordinates?.gameState ?? null,
+          };
+          setSimaEvents((prev) => [evt, ...prev].slice(0, 30));
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentSessionId]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -72,7 +145,8 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
             payload: {
               sessionId: sessionId,
               deviceId: deviceId,
-              iterations: 1
+              iterations: 1,
+              objective: objectiveRef.current,
             }
           }
         });
@@ -141,7 +215,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
             deviceId: game.deviceId,  // Hardware device ID (e.g., 330021a82ec4c231)
             gameName: game.name,
             packageName: game.packageName,
-            config: {},
+            config: { objective: objectiveRef.current },
           }
         }
       });
@@ -277,6 +351,103 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
               <p className="text-xs text-destructive text-center">
                 No device connected. Scan games from a connected device.
               </p>
+            )}
+
+            {/* Objective input (SIMA 2 goal) */}
+            <div className="pt-2">
+              <button
+                onClick={() => setShowObjective((s) => !s)}
+                className="flex items-center gap-1.5 text-xs text-neon-blue hover:text-neon-blue/80 transition-colors"
+                type="button"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Agent Objective
+                {showObjective ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+              {showObjective && (
+                <Textarea
+                  value={objective}
+                  onChange={(e) => setObjective(e.target.value)}
+                  placeholder="e.g. Clear Level 1 using only same-row matches"
+                  className="mt-2 text-xs bg-gaming-card border-gaming-border min-h-[60px]"
+                  disabled={isPlaying}
+                />
+              )}
+              {!showObjective && (
+                <p className="text-[10px] text-muted-foreground mt-1 truncate italic">
+                  "{objective}"
+                </p>
+              )}
+            </div>
+
+            {/* SIMA 2 live reasoning panel */}
+            {currentSessionId && (
+              <div className="pt-2 border-t border-gaming-border">
+                <button
+                  onClick={() => setShowSima((s) => !s)}
+                  className="flex items-center gap-1.5 text-xs text-neon-purple hover:text-neon-purple/80 transition-colors w-full"
+                  type="button"
+                >
+                  <Brain className="w-3.5 h-3.5" />
+                  SIMA 2 Reasoning
+                  <Badge variant="outline" className="text-[10px] ml-auto">
+                    {simaEvents.length}
+                  </Badge>
+                  {showSima ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+                {showSima && (
+                  <div className="mt-2 max-h-[260px] overflow-y-auto space-y-1.5">
+                    {simaEvents.length === 0 && (
+                      <p className="text-xs text-muted-foreground italic text-center py-3">
+                        Waiting for first SIMA cycle...
+                      </p>
+                    )}
+                    {simaEvents.map((e) => (
+                      <div
+                        key={e.id}
+                        className={`rounded border p-2 text-[11px] leading-snug ${
+                          e.action_type === 'level_complete'
+                            ? 'border-neon-green/40 bg-neon-green/5'
+                            : e.action_type === 'level_failed'
+                            ? 'border-destructive/40 bg-destructive/5'
+                            : 'border-gaming-border bg-gaming-card/40'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {e.skill ? (
+                            <Badge variant="outline" className="text-[9px] text-neon-purple border-neon-purple/40">
+                              {e.skill}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[9px]">{e.action_type}</Badge>
+                          )}
+                          {e.gameState && (
+                            <span className="text-[9px] text-muted-foreground">[{e.gameState}]</span>
+                          )}
+                          <span className="ml-auto text-[9px] text-muted-foreground">
+                            {new Date(e.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        {e.instruction && (
+                          <div className="flex items-start gap-1 text-neon-blue mb-0.5">
+                            <BookOpen className="w-2.5 h-2.5 mt-0.5 shrink-0" />
+                            <span className="italic">"{e.instruction}"</span>
+                          </div>
+                        )}
+                        {e.reasoning && (
+                          <div className="flex items-start gap-1 text-foreground/80">
+                            <Lightbulb className="w-2.5 h-2.5 mt-0.5 shrink-0 text-neon-pink" />
+                            <span>{e.reasoning}</span>
+                          </div>
+                        )}
+                        {!e.reasoning && e.description && (
+                          <p className="text-muted-foreground">{e.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
