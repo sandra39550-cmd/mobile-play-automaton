@@ -45,16 +45,76 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
   const [actionsCount, setActionsCount] = useState(0);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [hardwareDeviceId, setHardwareDeviceId] = useState<string | null>(null);
+  const [objective, setObjective] = useState<string>(
+    "Read on-screen instructions, navigate to Level 1, and complete Level 1 of Tile Park."
+  );
+  const [showObjective, setShowObjective] = useState(false);
+  const [simaEvents, setSimaEvents] = useState<SimaEvent[]>([]);
+  const [showSima, setShowSima] = useState(true);
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const objectiveRef = useRef(objective);
+  useEffect(() => { objectiveRef.current = objective; }, [objective]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (playIntervalRef.current) {
-        clearInterval(playIntervalRef.current);
-      }
+      if (playIntervalRef.current) clearInterval(playIntervalRef.current);
     };
   }, []);
+
+  // Subscribe to live bot_actions for the active session — SIMA reasoning feed
+  useEffect(() => {
+    if (!currentSessionId) return;
+    setSimaEvents([]);
+
+    // Backfill last 20
+    supabase
+      .from('bot_actions')
+      .select('id, timestamp, action_type, success, coordinates')
+      .eq('session_id', currentSessionId)
+      .order('timestamp', { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        if (!data) return;
+        const mapped: SimaEvent[] = data.map((r: any) => ({
+          id: r.id,
+          timestamp: r.timestamp,
+          action_type: r.action_type,
+          success: !!r.success,
+          skill: r.coordinates?.skill ?? null,
+          instruction: r.coordinates?.instruction ?? null,
+          reasoning: r.coordinates?.reasoning ?? null,
+          description: r.coordinates?.description ?? null,
+          gameState: r.coordinates?.gameState ?? null,
+        }));
+        setSimaEvents(mapped);
+      });
+
+    const channel = supabase
+      .channel(`bot-actions-${currentSessionId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'bot_actions', filter: `session_id=eq.${currentSessionId}` },
+        (payload) => {
+          const r: any = payload.new;
+          const evt: SimaEvent = {
+            id: r.id,
+            timestamp: r.timestamp,
+            action_type: r.action_type,
+            success: !!r.success,
+            skill: r.coordinates?.skill ?? null,
+            instruction: r.coordinates?.instruction ?? null,
+            reasoning: r.coordinates?.reasoning ?? null,
+            description: r.coordinates?.description ?? null,
+            gameState: r.coordinates?.gameState ?? null,
+          };
+          setSimaEvents((prev) => [evt, ...prev].slice(0, 30));
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentSessionId]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
