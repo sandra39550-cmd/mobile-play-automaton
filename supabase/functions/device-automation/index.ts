@@ -1390,7 +1390,7 @@ CRITICAL: Never invent buttons. If unsure, skill="observe" + action wait.`
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'SIMA 2 task: read any on-screen instructions, then take ONE action that brings us closer to completing Level 1 of Tile Park. If a tutorial overlay or arrow is shown, follow it exactly. Otherwise advance through menus to Level 1, then match tiles. Include the literal instruction text you read in the "instruction" field.' },
+              { type: 'text', text: `SIMA 2 user objective: "${userObjective}". Read on-screen instructions, pick exactly ONE skill from the vocabulary that best advances this objective right now, and return ONE JSON object with gameState, skill, instruction, reasoning, description, confidence, plus action OR matchPair.` },
               {
                 type: 'image_url',
                 image_url: { url: screenshotBase64 }
@@ -1421,7 +1421,9 @@ CRITICAL: Never invent buttons. If unsure, skill="observe" + action wait.`
       try {
         const parsed = JSON.parse(jsonMatch[0])
         console.log('✅ Parsed AI response:', JSON.stringify(parsed))
-        if (parsed.instruction) console.log(`📖 SIMA read instruction: "${parsed.instruction}" (state=${parsed.gameState})`)
+        if (parsed.instruction) console.log(`📖 SIMA read: "${parsed.instruction}" | skill=${parsed.skill} | state=${parsed.gameState}`)
+        if (parsed.reasoning) console.log(`💭 SIMA reasoning: ${parsed.reasoning}`)
+        const skillTag = parsed.skill ? ` ⟨${parsed.skill}⟩` : ''
         const instrTag = parsed.instruction ? ` [📖 "${String(parsed.instruction).substring(0, 80)}"]` : ''
         
         // Handle matching pair response
