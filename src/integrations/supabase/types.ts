@@ -107,6 +107,33 @@ export type Database = {
           },
         ]
       }
+      agent_instructions: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          id: string
+          instruction: string
+          session_id: string
+          status: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          instruction: string
+          session_id: string
+          status?: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          id?: string
+          instruction?: string
+          session_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       bot_actions: {
         Row: {
           action_type: string
