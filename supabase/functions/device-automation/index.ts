@@ -1017,9 +1017,20 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       // Detect terminal states (Level 1 success / failure) and record reason
       const aGameState = (analysis as any).gameState as string | undefined
       const aInstruction = (analysis as any).instruction as string | undefined
+      const aSkill = (analysis as any).skill as string | undefined
+      const aReasoning = (analysis as any).reasoning as string | undefined
+      // Common reasoning payload merged into bot_actions.coordinates per cycle
+      const reasoningMeta = {
+        skill: aSkill || null,
+        instruction: aInstruction || null,
+        reasoning: aReasoning || null,
+        gameState: aGameState || null,
+        description: analysis.description || null,
+        objective: effectiveObjective,
+      }
+
       if (aGameState === 'level_complete' || aGameState === 'game_over') {
         const isWin = aGameState === 'level_complete'
-        // Track retry attempts in session.config so each failure is logged separately
         const cfg: any = (session.config && typeof session.config === 'object') ? { ...session.config } : {}
         const attemptNum = (cfg.level1_attempts || 0) + 1
         cfg.level1_attempts = attemptNum
@@ -1029,11 +1040,10 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
           : `❌ LEVEL 1 FAILED (attempt #${attemptNum}) — ${analysis.description}${aInstruction ? ` | read: "${aInstruction}"` : ''}`
         console.log(`🏁 Terminal state detected: ${reason}`)
 
-        // Log this attempt as its own bot_action row
         await supabaseClient.from('bot_actions').insert({
           session_id: sessionId,
           action_type: isWin ? 'level_complete' : 'level_failed',
-          coordinates: { gameState: aGameState, instruction: aInstruction || null, reason, attempt: attemptNum },
+          coordinates: { ...reasoningMeta, reason, attempt: attemptNum },
           success: isWin,
           execution_time_ms: 0,
         })
@@ -1057,7 +1067,6 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
           }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
-        // FAILURE → automatic retry: relaunch the level and keep looping
         console.log(`🔁 Auto-retry: relaunching ${session.package_name} for attempt #${attemptNum + 1}`)
         await supabaseClient
           .from('bot_sessions')
@@ -1076,7 +1085,6 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
         } catch (e) {
           console.warn(`⚠️ Relaunch failed:`, e)
         }
-        // Give the game a few seconds to load before next perception cycle
         await new Promise((r) => setTimeout(r, 4000))
         results.push({ iteration: i + 1, retry: true, attempt: attemptNum, reason })
         continue
@@ -1084,66 +1092,60 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
 
       // 3. Execute actions
       if (analysis.action) {
-        // For tile matching: tap first tile, wait, tap second tile
         if (analysis.matchPair) {
           const tile1 = analysis.matchPair.tile1
           const tile2 = analysis.matchPair.tile2
           
           console.log(`🧩 Matching pair: (${tile1.x},${tile1.y}) → (${tile2.x},${tile2.y})`)
           
-          // Tap first tile
           const tap1Result = await executeRealAction(baseUrl, { type: 'tap', coordinates: tile1, deviceId })
           actionsPerformed++
-          console.log(`👆 Tap 1 result: success=${tap1Result.success}`)
           
           await supabaseClient.from('bot_actions').insert({
             session_id: sessionId, action_type: 'tap',
-            coordinates: tile1, success: tap1Result.success,
+            coordinates: { ...tile1, ...reasoningMeta, role: 'match_tile1' },
+            success: tap1Result.success,
             execution_time_ms: tap1Result.executionTime || 100
           })
           
-          // Wait for selection highlight animation
           await new Promise(resolve => setTimeout(resolve, 500))
           
-          // Tap second tile to complete match
           const tap2Result = await executeRealAction(baseUrl, { type: 'tap', coordinates: tile2, deviceId })
           actionsPerformed++
-          console.log(`👆 Tap 2 result: success=${tap2Result.success}`)
           
           await supabaseClient.from('bot_actions').insert({
             session_id: sessionId, action_type: 'tap',
-            coordinates: tile2, success: tap2Result.success,
+            coordinates: { ...tile2, ...reasoningMeta, role: 'match_tile2' },
+            success: tap2Result.success,
             execution_time_ms: tap2Result.executionTime || 100
           })
           
-          results.push({
-            iteration: i + 1,
-            action: 'match_pair',
-            tile1, tile2,
-            description: analysis.description
-          })
+          results.push({ iteration: i + 1, action: 'match_pair', tile1, tile2, description: analysis.description, skill: aSkill })
         } else {
-          // Single action (menu tap, swipe, etc.)
           const actionWithDevice = { ...analysis.action, deviceId }
           const actionResult = await executeRealAction(baseUrl, actionWithDevice)
           actionsPerformed++
           
           await supabaseClient.from('bot_actions').insert({
             session_id: sessionId, action_type: analysis.action.type,
-            coordinates: analysis.action.coordinates || analysis.action.fromCoordinates,
+            coordinates: { ...(analysis.action.coordinates || analysis.action.fromCoordinates || {}), ...reasoningMeta },
             success: actionResult.success,
             execution_time_ms: actionResult.executionTime || 100
           })
           
-          results.push({
-            iteration: i + 1,
-            action: analysis.action,
-            result: actionResult,
-            description: analysis.description
-          })
+          results.push({ iteration: i + 1, action: analysis.action, result: actionResult, description: analysis.description, skill: aSkill })
         }
+      } else {
+        // Wait/no-op cycle — still log so users see the reasoning timeline
+        await supabaseClient.from('bot_actions').insert({
+          session_id: sessionId, action_type: 'wait',
+          coordinates: reasoningMeta,
+          success: true,
+          execution_time_ms: 0,
+        })
+        results.push({ iteration: i + 1, action: 'wait', description: analysis.description, skill: aSkill })
       }
-      
+
       // Delay between iterations to let animations play
       if (i < iterations - 1) {
         await new Promise(resolve => setTimeout(resolve, 800))
