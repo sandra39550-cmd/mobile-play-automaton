@@ -2,10 +2,23 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Play, Square, Settings, TrendingUp, Smartphone } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Play, Square, Settings, TrendingUp, Smartphone, Brain, BookOpen, Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+interface SimaEvent {
+  id: string;
+  timestamp: string;
+  action_type: string;
+  success: boolean;
+  skill: string | null;
+  instruction: string | null;
+  reasoning: string | null;
+  description: string | null;
+  gameState: string | null;
+}
 
 interface BotCardProps {
   game: {
