@@ -215,7 +215,7 @@ export const BotCard = ({ game, onStatusChange }: BotCardProps) => {
             deviceId: game.deviceId,  // Hardware device ID (e.g., 330021a82ec4c231)
             gameName: game.name,
             packageName: game.packageName,
-            config: {},
+            config: { objective: objectiveRef.current },
           }
         }
       });
