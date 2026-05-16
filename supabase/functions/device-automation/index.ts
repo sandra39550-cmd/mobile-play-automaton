@@ -164,7 +164,7 @@ serve(async (req) => {
       case 'update_device':
         return await updateDevice(supabaseClient, payload)
       case 'run_bot_loop':
-        return await runBotLoop(supabaseClient, payload.sessionId, payload.deviceId, payload.iterations || 1)
+        return await runBotLoop(supabaseClient, payload.sessionId, payload.deviceId, payload.iterations || 1, payload.objective)
       case 'execute_tap':
         return await executeTapAction(supabaseClient, payload.deviceId, payload.x, payload.y)
       case 'analyze_screen':
@@ -947,7 +947,7 @@ async function analyzeScreenWithAI(supabaseClient: any, deviceId: string, gameNa
 // ============ BOT AUTOMATION FUNCTIONS ============
 
 // Run bot automation loop with AI vision
-async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDeviceId: string | null, iterations: number = 1) {
+async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDeviceId: string | null, iterations: number = 1, objective?: string) {
   console.log(`🤖 Starting bot loop for session ${sessionId}, iterations: ${iterations}`)
   
   try {
