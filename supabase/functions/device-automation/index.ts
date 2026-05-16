@@ -1002,8 +1002,14 @@ async function runBotLoop(supabaseClient: any, sessionId: string, hardwareDevice
       const isTilePark = session.game_name.toLowerCase().includes('tile') || 
           session.package_name.toLowerCase().includes('tilepark')
       
+      // Resolve objective: param > session.config.objective > default
+      const sessObjective = (session.config && typeof session.config === 'object')
+        ? (session.config as any).objective : undefined
+      const effectiveObjective = (objective && objective.trim()) || sessObjective ||
+        'Read on-screen instructions, navigate to Level 1, and complete Level 1 of Tile Park.'
+
       const analysis = isTilePark 
-        ? await analyzeScreenWithGemini(screenshot, session.game_name)
+        ? await analyzeScreenWithGemini(screenshot, session.game_name, effectiveObjective)
         : analyzeScreenHeuristic(session.game_name)
       
       console.log(`🎯 AI result: ${analysis.description}`)
