@@ -1446,21 +1446,21 @@ CRITICAL: Never invent buttons. If unsure, skill="observe" + action wait.`
             action: { type: 'tap' as const, coordinates: tile1 },
             matchPair: { tile1, tile2 },
             gameState: parsed.gameState, instruction: parsed.instruction,
-            description: (parsed.description || `Matching ${parsed.matchPair.tileName || 'tiles'}`) + instrTag
-          }
+            skill: parsed.skill, reasoning: parsed.reasoning,
+            description: skillTag + ' ' + (parsed.description || `Matching ${parsed.matchPair.tileName || 'tiles'}`) + instrTag
+          } as any
         }
         
-        // Handle "wait" action — splash/loading screens, do nothing this iteration
         if (parsed.action?.type === 'wait') {
           console.log(`⏳ Wait state (${parsed.gameState}): ${parsed.description}`)
           return {
             action: null,
             gameState: parsed.gameState, instruction: parsed.instruction,
-            description: `⏳ ${parsed.description || 'Waiting for game to be ready'}` + instrTag
-          }
+            skill: parsed.skill, reasoning: parsed.reasoning,
+            description: skillTag + ` ⏳ ` + (parsed.description || 'Waiting') + instrTag
+          } as any
         }
         
-        // Handle swipe/move action
         if (parsed.action) {
           if (parsed.action.type === 'swipe' && parsed.action.fromX != null && parsed.action.toX != null) {
             const fromX = Math.max(30, Math.min(690, Math.round(parsed.action.fromX)))
@@ -1476,11 +1476,11 @@ CRITICAL: Never invent buttons. If unsure, skill="observe" + action wait.`
                 duration: 400,
               },
               gameState: parsed.gameState, instruction: parsed.instruction,
-              description: (parsed.description || `Moving tile from (${fromX},${fromY}) to (${toX},${toY})`) + instrTag
-            }
+              skill: parsed.skill, reasoning: parsed.reasoning,
+              description: skillTag + ' ' + (parsed.description || `Swipe (${fromX},${fromY})→(${toX},${toY})`) + instrTag
+            } as any
           }
           
-          // Handle tap action (menu, popup, etc.)
           if (typeof parsed.action.x === 'number' && typeof parsed.action.y === 'number') {
             const x = Math.max(30, Math.min(690, Math.round(parsed.action.x)))
             const y = Math.max(200, Math.min(1100, Math.round(parsed.action.y)))
@@ -1488,8 +1488,9 @@ CRITICAL: Never invent buttons. If unsure, skill="observe" + action wait.`
             return {
               action: { type: 'tap' as const, coordinates: { x, y } },
               gameState: parsed.gameState, instruction: parsed.instruction,
-              description: (parsed.description || `Tap at (${x}, ${y})`) + instrTag
-            }
+              skill: parsed.skill, reasoning: parsed.reasoning,
+              description: skillTag + ' ' + (parsed.description || `Tap (${x},${y})`) + instrTag
+            } as any
           }
         }
       } catch (parseError) {
